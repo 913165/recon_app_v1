@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.concurrent.TimeUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -64,10 +65,12 @@ public class ReconService {
             throw new ReconAlreadyRunException("Recon already run for date " + date.format(FILE_DATE_FORMAT));
         }
 
+        long startNanos = System.nanoTime();
         String fileDate = date.format(FILE_DATE_FORMAT);
-        Path npciFile = appConfig.input().npciDir().resolve("NPCI_TXN_" + fileDate + ".txt");
-        Path switchFile = appConfig.input().switchDir().resolve("SWITCH_LOG_" + fileDate + ".txt");
-        Path outputFile = appConfig.output().outputDir().resolve("RECON_RESULT_" + fileDate + ".txt");
+        String ext = appConfig.fileExtension();
+        Path npciFile = appConfig.input().npciDir().resolve("NPCI_TXN_" + fileDate + ext);
+        Path switchFile = appConfig.input().switchDir().resolve("SWITCH_LOG_" + fileDate + ext);
+        Path outputFile = appConfig.output().outputDir().resolve("RECON_RESULT_" + fileDate + ext);
 
         List<NpciRecord> npciRows = fileParserService.parseNpciFile(npciFile);
         List<SwitchRecord> switchRows = fileParserService.parseSwitchFile(switchFile);
@@ -103,7 +106,8 @@ public class ReconService {
         reconResultRepository.saveAll(results.stream().map(row -> toEntity(row, date)).toList());
         fileWriterService.writeReconResult(results, outputFile);
 
-        return toRunSummary(date, npciRows.size(), switchRows.size(), results, outputFile);
+        long durationMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+        return toRunSummary(date, npciRows.size(), switchRows.size(), results, outputFile, durationMillis);
     }
 
     @Transactional(readOnly = true)
@@ -119,7 +123,7 @@ public class ReconService {
         long statusMismatch = results.stream().filter(r -> "STATUS_MISMATCH".equals(r.reconStatus())).count();
 
         return new ReconSummary(date, 0, 0, matched, switchMissing, npciMissing, amountMismatch, statusMismatch, null,
-            "COMPLETED", new ReconSummary.Summary(results.size(), matched, results.size() - matched), results);
+            "COMPLETED", null, new ReconSummary.Summary(results.size(), matched, results.size() - matched), results);
     }
 
     private ReconStatus resolveStatus(@Nullable NpciRecord npci, @Nullable SwitchRecord sw) {
@@ -186,13 +190,14 @@ public class ReconService {
         return e;
     }
 
-    private ReconSummary toRunSummary(LocalDate date, int npciCount, int switchCount, List<ReconResultRecord> results, Path outputFile) {
+    private ReconSummary toRunSummary(LocalDate date, int npciCount, int switchCount, List<ReconResultRecord> results,
+                                      Path outputFile, long durationMillis) {
         long matched = results.stream().filter(r -> "MATCHED".equals(r.reconStatus())).count();
         long switchMissing = results.stream().filter(r -> "SWITCH_MISSING".equals(r.reconStatus())).count();
         long npciMissing = results.stream().filter(r -> "NPCI_MISSING".equals(r.reconStatus())).count();
         long amountMismatch = results.stream().filter(r -> "AMOUNT_MISMATCH".equals(r.reconStatus())).count();
         long statusMismatch = results.stream().filter(r -> "STATUS_MISMATCH".equals(r.reconStatus())).count();
         return new ReconSummary(date, npciCount, switchCount, matched, switchMissing, npciMissing, amountMismatch, statusMismatch,
-            outputFile.toString().replace('\\', '/'), "COMPLETED", null, null);
+            outputFile.toString().replace('\\', '/'), "COMPLETED", durationMillis, null, null);
     }
 }

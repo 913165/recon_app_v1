@@ -45,10 +45,10 @@ WHAT THE APP DOES — ONE SIMPLE FLOW
 ════════════════════════════════════════════════════════════════
 
 1. User calls POST /api/recon/run?date=20240101
-2. App reads FILE 1: NPCI_TXN_20240101.txt          from /data/input/npci/
-3. App reads FILE 2: SWITCH_LOG_20240101.txt         from /data/input/switch/
+2. App reads FILE 1: NPCI_TXN_20240101.dat          from /data/input/npci/
+3. App reads FILE 2: SWITCH_LOG_20240101.dat         from /data/input/switch/
 4. App compares both files row by row using UTR as join key
-5. App writes FILE 3: RECON_RESULT_20240101.txt      to   /data/output/
+5. App writes FILE 3: RECON_RESULT_20240101.dat      to   /data/output/
 6. App saves all results to PostgreSQL
 7. User calls GET /api/recon/results?date=20240101   to see results as JSON
 
@@ -60,25 +60,25 @@ INPUT FILE 1 — NPCI Transaction File
 
 ════════════════════════════════════════════════════════════════
 
-Location : /data/input/npci/NPCI_TXN_{date}.txt
+Location : /data/input/npci/NPCI_TXN_{date}.dat
 Format   : Pipe-delimited ( | ), plain text, UTF-8
 Has header row: YES (first row = column names)
 
 Columns:
 UTR | RRN | TXN_DATE | TXN_TIME | AMOUNT | PAYER_VPA | PAYEE_VPA | STATUS
 
-Sample data (include this in test files):
+Sample data (include this in test files) — UTR and RRN use realistic lengths (16-digit UTR, 12-digit RRN):
 UTR|RRN|TXN_DATE|TXN_TIME|AMOUNT|PAYER_VPA|PAYEE_VPA|STATUS
-UTR001|RRN001|20240101|100000|500.00|alice@hdfc|shop@sbi|SUCCESS
-UTR002|RRN002|20240101|100500|1000.00|bob@hdfc|mart@icici|SUCCESS
-UTR003|RRN003|20240101|101000|750.00|carol@hdfc|store@axis|SUCCESS
-UTR004|RRN004|20240101|101500|200.00|dave@hdfc|food@sbi|SUCCESS
-UTR005|RRN005|20240101|102000|3000.00|eve@hdfc|hotel@icici|SUCCESS
-UTR006|RRN006|20240101|102500|150.00|frank@hdfc|cafe@sbi|SUCCESS
-UTR007|RRN007|20240101|103000|800.00|grace@hdfc|shop@axis|SUCCESS
-UTR008|RRN008|20240101|103500|450.00|henry@hdfc|mart@sbi|SUCCESS
-UTR009|RRN009|20240101|104000|250.00|iris@hdfc|store@icici|SUCCESS
-UTR010|RRN010|20240101|104500|600.00|jack@hdfc|cafe@axis|SUCCESS
+5024010100000001|812345678901|20240101|100000|500.00|priya.reddy@ybl|dominos@pine|SUCCESS
+5024010100000002|812345678902|20240101|100500|1000.00|amit.kumar@oksbi|bigbasket@hdfcbank|SUCCESS
+5024010100000003|812345678903|20240101|101000|750.00|sneha.menon@axl|freshmart@icici|SUCCESS
+5024010100000004|812345678904|20240101|101500|200.00|rohit.sharma@ybl|foodhall@yesbank|SUCCESS
+5024010100000005|812345678905|20240101|102000|3000.00|kavita.nair@paytm|hotel.taj@ibl|SUCCESS
+5024010100000006|812345678906|20240101|102500|150.00|vikram.patel@oksbi|cafecoffee@sbi|SUCCESS
+5024010100000007|812345678907|20240101|103000|800.00|ananya.das@paytm|retail.store@axisbank|SUCCESS
+5024010100000008|812345678908|20240101|103500|450.00|deepa.joshi@ibl|grocery@ybl|SUCCESS
+5024010100000009|812345678909|20240101|104000|250.00|rajesh.kumar@paytm|electronics@icici|SUCCESS
+5024010100000010|812345678910|20240101|104500|600.00|meera.iyer@ybl|restaurant@axisbank|SUCCESS
 
 
 ════════════════════════════════════════════════════════════════
@@ -86,7 +86,7 @@ INPUT FILE 2 — Switch Log File
 
 ════════════════════════════════════════════════════════════════
 
-Location : /data/input/switch/SWITCH_LOG_{date}.txt
+Location : /data/input/switch/SWITCH_LOG_{date}.dat
 Format   : Pipe-delimited ( | ), plain text, UTF-8
 Has header row: YES
 
@@ -95,19 +95,19 @@ UTR | RRN | TXN_DATE | TXN_TIME | AMOUNT | STATUS | RESPONSE_CODE | SWITCH_REF
 
 Sample data — deliberately introduce mismatches:
 UTR|RRN|TXN_DATE|TXN_TIME|AMOUNT|STATUS|RESPONSE_CODE|SWITCH_REF
-UTR001|RRN001|20240101|100000|500.00|SUCCESS|00|SW001
-UTR002|RRN002|20240101|100500|1000.00|SUCCESS|00|SW002
-UTR003|RRN003|20240101|101000|750.00|SUCCESS|00|SW003
-UTR004|RRN004|20240101|101500|200.00|SUCCESS|00|SW004
-UTR005|RRN005|20240101|102000|3000.00|SUCCESS|00|SW005
-UTR006|RRN006|20240101|102500|150.00|SUCCESS|00|SW006
-UTR007|RRN007|20240101|103000|999.00|SUCCESS|00|SW007
-UTR009|RRN009|20240101|104000|250.00|FAILED|51|SW009
-UTR010|RRN010|20240101|104500|600.00|SUCCESS|00|SW010
+5024010100000001|812345678901|20240101|100000|500.00|SUCCESS|00|9234010110000001
+5024010100000002|812345678902|20240101|100500|1000.00|SUCCESS|00|9234010110000002
+5024010100000003|812345678903|20240101|101000|750.00|SUCCESS|00|9234010110000003
+5024010100000004|812345678904|20240101|101500|200.00|SUCCESS|00|9234010110000004
+5024010100000005|812345678905|20240101|102000|3000.00|SUCCESS|00|9234010110000005
+5024010100000006|812345678906|20240101|102500|150.00|SUCCESS|00|9234010110000006
+5024010100000007|812345678907|20240101|103000|999.00|SUCCESS|00|9234010110000007
+5024010100000009|812345678909|20240101|104000|250.00|FAILED|51|9234010110000009
+5024010100000010|812345678910|20240101|104500|600.00|SUCCESS|00|9234010110000010
 
-NOTE: UTR007 has AMOUNT mismatch (NPCI=800.00, Switch=999.00)
-NOTE: UTR008 is MISSING from Switch file entirely
-NOTE: UTR009 has STATUS mismatch (NPCI=SUCCESS, Switch=FAILED)
+NOTE: UTR …0000007 has AMOUNT mismatch (NPCI=800.00, Switch=999.00)
+NOTE: UTR …0000008 is MISSING from Switch file entirely
+NOTE: UTR …0000009 has STATUS mismatch (NPCI=SUCCESS, Switch=FAILED)
 
 
 ════════════════════════════════════════════════════════════════
@@ -145,7 +145,7 @@ OUTPUT FILE — Recon Result File
 
 ════════════════════════════════════════════════════════════════
 
-Location : /data/output/RECON_RESULT_{date}.txt
+Location : /data/output/RECON_RESULT_{date}.dat
 Format   : Pipe-delimited ( | ), UTF-8, with header row
 
 Columns:
@@ -153,16 +153,16 @@ UTR | NPCI_AMOUNT | SWITCH_AMOUNT | NPCI_STATUS | SWITCH_STATUS | RECON_STATUS |
 
 Sample output (based on sample input above):
 UTR|NPCI_AMOUNT|SWITCH_AMOUNT|NPCI_STATUS|SWITCH_STATUS|RECON_STATUS|REMARKS
-UTR001|500.00|500.00|SUCCESS|SUCCESS|MATCHED|All fields match
-UTR002|1000.00|1000.00|SUCCESS|SUCCESS|MATCHED|All fields match
-UTR003|750.00|750.00|SUCCESS|SUCCESS|MATCHED|All fields match
-UTR004|200.00|200.00|SUCCESS|SUCCESS|MATCHED|All fields match
-UTR005|3000.00|3000.00|SUCCESS|SUCCESS|MATCHED|All fields match
-UTR006|150.00|150.00|SUCCESS|SUCCESS|MATCHED|All fields match
-UTR007|800.00|999.00|SUCCESS|SUCCESS|AMOUNT_MISMATCH|Amount differs: NPCI=800.00 Switch=999.00
-UTR008|450.00|--|SUCCESS|--|SWITCH_MISSING|UTR present in NPCI but missing from Switch Log
-UTR009|250.00|250.00|SUCCESS|FAILED|STATUS_MISMATCH|Status differs: NPCI=SUCCESS Switch=FAILED
-UTR010|600.00|600.00|SUCCESS|SUCCESS|MATCHED|All fields match
+5024010100000001|500.00|500.00|SUCCESS|SUCCESS|MATCHED|All fields match
+5024010100000002|1000.00|1000.00|SUCCESS|SUCCESS|MATCHED|All fields match
+5024010100000003|750.00|750.00|SUCCESS|SUCCESS|MATCHED|All fields match
+5024010100000004|200.00|200.00|SUCCESS|SUCCESS|MATCHED|All fields match
+5024010100000005|3000.00|3000.00|SUCCESS|SUCCESS|MATCHED|All fields match
+5024010100000006|150.00|150.00|SUCCESS|SUCCESS|MATCHED|All fields match
+5024010100000007|800.00|999.00|SUCCESS|SUCCESS|AMOUNT_MISMATCH|Amount differs: NPCI=800.00 Switch=999.00
+5024010100000008|450.00|--|SUCCESS|--|SWITCH_MISSING|UTR present in NPCI but missing from Switch Log
+5024010100000009|250.00|250.00|SUCCESS|FAILED|STATUS_MISMATCH|Status differs: NPCI=SUCCESS Switch=FAILED
+5024010100000010|600.00|600.00|SUCCESS|SUCCESS|MATCHED|All fields match
 
 
 ════════════════════════════════════════════════════════════════
@@ -258,12 +258,12 @@ ENDPOINT 1 — Run Recon
 POST /api/recon/run?date=20240101
 
 What it does:
-1. Reads NPCI_TXN_20240101.txt from /data/input/npci/
-2. Reads SWITCH_LOG_20240101.txt from /data/input/switch/
+1. Reads NPCI_TXN_20240101.dat from /data/input/npci/
+2. Reads SWITCH_LOG_20240101.dat from /data/input/switch/
 3. Saves all rows from both files to PostgreSQL
 4. Runs comparison logic
 5. Saves recon_results to PostgreSQL
-6. Writes RECON_RESULT_20240101.txt to /data/output/
+6. Writes RECON_RESULT_20240101.dat to /data/output/
 7. Returns summary JSON
 
 Response (200 OK):
@@ -276,7 +276,7 @@ Response (200 OK):
 "npciMissing": 0,
 "amountMismatch": 1,
 "statusMismatch": 1,
-"outputFile": "/data/output/RECON_RESULT_20240101.txt",
+"outputFile": "/data/output/RECON_RESULT_20240101.dat",
 "status": "COMPLETED"
 }
 
@@ -299,7 +299,7 @@ Response (200 OK):
 },
 "results": [
 {
-"utr": "UTR001",
+"utr": "5024010100000001",
 "npciAmount": 500.00,
 "switchAmount": 500.00,
 "npciStatus": "SUCCESS",
@@ -404,8 +404,8 @@ JPA @Entity classes using jakarta.persistence.*
 - Creates recondb, recon_user, recon_pass automatically
 
 14. Sample test files
-- /data/input/npci/NPCI_TXN_20240101.txt     (10 rows as shown above)
-- /data/input/switch/SWITCH_LOG_20240101.txt  (9 rows — with 3 mismatches)
+- /data/input/npci/NPCI_TXN_20240101.dat     (10 rows as shown above)
+- /data/input/switch/SWITCH_LOG_20240101.dat  (9 rows — with 3 mismatches)
 
 15. README.md with:
 - How to start with docker-compose
@@ -484,9 +484,9 @@ schema.sql
 
 data/                             ← mounted as Docker volume
 input/
-npci/    NPCI_TXN_20240101.txt
-switch/  SWITCH_LOG_20240101.txt
-output/    RECON_RESULT_20240101.txt  ← generated here
+npci/    NPCI_TXN_20240101.dat
+switch/  SWITCH_LOG_20240101.dat
+output/    RECON_RESULT_20240101.dat  ← generated here
 
 docker-compose.yml                ← PostgreSQL 15 only
 README.md
@@ -519,33 +519,33 @@ UPI Recon V1 — Simple File Comparison  |  Spring Boot 4.0.6 + Java 25
 | Step | Action | Detail |
 | --- | --- | --- |
 | 1 | POST /api/recon/run?date=20240101 | User triggers recon for a date |
-| 2 | Read NPCI File | NPCI_TXN_20240101.txt from /data/input/npci/ |
-| 3 | Read Switch File | SWITCH_LOG_20240101.txt from /data/input/switch/ |
+| 2 | Read NPCI File | NPCI_TXN_20240101.dat from /data/input/npci/ |
+| 3 | Read Switch File | SWITCH_LOG_20240101.dat from /data/input/switch/ |
 | 4 | Save to DB | Both files loaded into PostgreSQL staging tables |
 | 5 | Compare row by row | Using UTR as join key — apply 5 comparison rules |
-| 6 | Write output file | RECON_RESULT_20240101.txt to /data/output/ |
+| 6 | Write output file | RECON_RESULT_20240101.dat to /data/output/ |
 | 7 | Save results to DB | recon_results table updated |
 | 8 | GET /api/recon/results?date=... | Query results as JSON anytime |
 
 | File | Location | Columns | Rows |
 | --- | --- | --- | --- |
-| NPCI_TXN_{date}.txt | /data/input/npci/ | UTR|RRN|TXN_DATE|TXN_TIME|AMOUNT|PAYER_VPA|PAYEE_VPA|STATUS | 10 |
-| SWITCH_LOG_{date}.txt | /data/input/switch/ | UTR|RRN|TXN_DATE|TXN_TIME|AMOUNT|STATUS|RESPONSE_CODE|SWITCH_REF | 9 (1 missing) |
+| NPCI_TXN_{date}.dat | /data/input/npci/ | UTR|RRN|TXN_DATE|TXN_TIME|AMOUNT|PAYER_VPA|PAYEE_VPA|STATUS | 10 |
+| SWITCH_LOG_{date}.dat | /data/input/switch/ | UTR|RRN|TXN_DATE|TXN_TIME|AMOUNT|STATUS|RESPONSE_CODE|SWITCH_REF | 9 (1 missing) |
 
 | File | Location | Columns |
 | --- | --- | --- |
-| RECON_RESULT_{date}.txt | /data/output/ | UTR|NPCI_AMOUNT|SWITCH_AMOUNT|NPCI_STATUS|SWITCH_STATUS|RECON_STATUS|REMARKS |
+| RECON_RESULT_{date}.dat | /data/output/ | UTR|NPCI_AMOUNT|SWITCH_AMOUNT|NPCI_STATUS|SWITCH_STATUS|RECON_STATUS|REMARKS |
 
 > **Note:**
 > ► UTR is the only join key across both files. ► Files are pipe-delimited ( | ) plain text with a header row. ► If a file is missing, the API returns a clear 404 error message.
 
 | Rule | Condition | Result | Example |
 | --- | --- | --- | --- |
-| 1 | UTR in NPCI — missing from Switch | SWITCH_MISSING | UTR008 in NPCI, not in Switch |
+| 1 | UTR in NPCI — missing from Switch | SWITCH_MISSING | e.g. …0000008 in NPCI, not in Switch |
 | 2 | UTR in Switch — missing from NPCI | NPCI_MISSING | Extra UTR in Switch only |
 | 3 | UTR in both — amount differs | AMOUNT_MISMATCH | NPCI=800 Switch=999 |
 | 4 | UTR in both — status differs | STATUS_MISMATCH | NPCI=SUCCESS Switch=FAILED |
-| 5 | UTR in both — amount + status both match | MATCHED | UTR001 all good |
+| 5 | UTR in both — amount + status both match | MATCHED | First row (…0000001) all good |
 
 > **Note:**
 > NOTE: Rules apply in order 1 → 5. First matching rule wins. NOTE: Use Java 25 sealed interface for ReconStatus — no string comparison. NOTE: Amount comparison must use BigDecimal.compareTo() — never == or .equals() on double.

@@ -14,6 +14,8 @@ public record ReconSummary(
     long statusMismatch,
     String outputFile,
     String status,
+    /** Wall-clock time for the full run (parse, persist, match, write). Null when not measured (e.g. GET results). */
+    Long durationMillis,
     Summary summary,
     List<ReconResultRecord> results
 ) {

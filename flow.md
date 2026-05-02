@@ -53,9 +53,9 @@ Implementation: `com.bank.recon.service.ReconService`.
    `reconResultRepository.existsByReconDate(date)` — if true, throws `ReconAlreadyRunException`.
 
 2. **Resolve paths** (from `AppConfig`, wired from `application.yml` under `recon.file`):  
-   - NPCI: `{npci-path}/NPCI_TXN_{yyyyMMdd}.txt`  
-   - Switch: `{switch-path}/SWITCH_LOG_{yyyyMMdd}.txt`  
-   - Output: `{output.path}/RECON_RESULT_{yyyyMMdd}.txt`  
+   - NPCI: `{npci-path}/NPCI_TXN_{yyyyMMdd}.{ext}` — `{ext}` from `recon.file.extension` (default `dat`)  
+   - Switch: `{switch-path}/SWITCH_LOG_{yyyyMMdd}.{ext}`  
+   - Output: `{output.path}/RECON_RESULT_{yyyyMMdd}.{ext}`  
    Defaults are `data/input/npci`, `data/input/switch`, `data/output` (override with `RECON_NPCI_PATH`, `RECON_SWITCH_PATH`, `RECON_OUTPUT_PATH`).
 
 3. **Parse inputs**  
@@ -138,7 +138,7 @@ Helper methods: `amountMatches`, `stringMatches`, `fmt` (amounts formatted to 2 
 - First line: fixed header  
   `UTR|NPCI_AMOUNT|SWITCH_AMOUNT|NPCI_STATUS|SWITCH_STATUS|RECON_STATUS|REMARKS`  
 - Each row: same columns, `|` joined; nulls rendered as `--`; amounts scaled to 2 decimal places (`HALF_UP`).  
-- Written with UTF-8 to `RECON_RESULT_{yyyyMMdd}.txt`.
+- Written with UTF-8 to `RECON_RESULT_{yyyyMMdd}.{ext}` (see `recon.file.extension`).
 
 ### 7.2 Database
 

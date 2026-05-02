@@ -8,7 +8,16 @@ import org.springframework.context.annotation.Bean;
 import tools.jackson.databind.json.JsonMapper;
 
 @ConfigurationProperties("recon.file")
-public record AppConfig(InputPaths input, OutputPaths output) {
+public record AppConfig(InputPaths input, OutputPaths output, String extension) {
+
+    /** Normalized suffix including leading dot, e.g. {@code .txt} or {@code .dat}. Defaults to {@code .txt} if blank. */
+    public String fileExtension() {
+        String e = (extension == null || extension.isBlank()) ? "txt" : extension.strip();
+        if (e.startsWith(".")) {
+            e = e.substring(1);
+        }
+        return "." + e;
+    }
 
     public record InputPaths(String npciPath, String switchPath) {
         public Path npciDir() {

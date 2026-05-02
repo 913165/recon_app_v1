@@ -38,3 +38,6 @@ replay_pid*
 
 # Application output (recon results)
 data/output/
+
+# Pipe-delimited data files (generated samples / recon I-O)
+*.dat
