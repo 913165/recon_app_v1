@@ -1,0 +1,25 @@
+﻿spring:
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: jdbc:postgresql://localhost:5432/recondb
+    username: recon_user
+    password: recon_pass
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+  sql:
+    init:
+      mode: always
+
+recon:
+  file:
+    input:
+      # Relative to working dir (run Maven from project root). Override for Docker: RECON_NPCI_PATH=/data/input/npci
+      npci-path: ${RECON_NPCI_PATH:data/input/npci}
+      switch-path: ${RECON_SWITCH_PATH:data/input/switch}
+    output:
+      path: ${RECON_OUTPUT_PATH:data/output}

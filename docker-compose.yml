@@ -1,0 +1,16 @@
+﻿services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: recondb
+      POSTGRES_USER: recon_user
+      POSTGRES_PASSWORD: recon_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./data/input:/data/input
+      - ./data/output:/data/output
+
+volumes:
+  pgdata:
