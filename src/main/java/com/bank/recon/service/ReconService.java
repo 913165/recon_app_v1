@@ -1,6 +1,7 @@
 package com.bank.recon.service;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.file.Path;
@@ -16,7 +17,9 @@ import java.util.TreeSet;
 
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.bank.recon.config.AppConfig;
 import com.bank.recon.exception.ReconAlreadyRunException;
@@ -47,68 +50,92 @@ public class ReconService {
     private final SwitchLogRepository switchLogRepository;
     private final ReconResultRepository reconResultRepository;
     private final AppConfig appConfig;
+    private final TransactionTemplate transactionTemplate;
 
     public ReconService(FileParserService fileParserService, FileWriterService fileWriterService,
                         NpciTransactionRepository npciTransactionRepository, SwitchLogRepository switchLogRepository,
-                        ReconResultRepository reconResultRepository, AppConfig appConfig) {
+                        ReconResultRepository reconResultRepository, AppConfig appConfig,
+                        PlatformTransactionManager transactionManager) {
         this.fileParserService = fileParserService;
         this.fileWriterService = fileWriterService;
         this.npciTransactionRepository = npciTransactionRepository;
         this.switchLogRepository = switchLogRepository;
         this.reconResultRepository = reconResultRepository;
         this.appConfig = appConfig;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
     public ReconSummary runRecon(LocalDate date) throws IOException {
+        long startNanos = System.nanoTime();
+        try {
+            // execute() returns only after PlatformTransactionManager.commit() finishes (JDBC commit included).
+            RunOutcome outcome = transactionTemplate.execute(status -> runReconInTransaction(date));
+            long durationMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+            return toRunSummary(outcome.date(), outcome.npciCount(), outcome.switchCount(), outcome.results(), outcome.outputFile(),
+                outcome.reconciliationMillis(), durationMillis);
+        } catch (UncheckedIOException e) {
+            throw (IOException) e.getCause();
+        }
+    }
+
+    private RunOutcome runReconInTransaction(LocalDate date) {
         if (reconResultRepository.existsByReconDate(date)) {
             throw new ReconAlreadyRunException("Recon already run for date " + date.format(FILE_DATE_FORMAT));
         }
+        try {
+            String fileDate = date.format(FILE_DATE_FORMAT);
+            String ext = appConfig.fileExtension();
+            Path npciFile = appConfig.input().npciDir().resolve("NPCI_TXN_" + fileDate + ext);
+            Path switchFile = appConfig.input().switchDir().resolve("SWITCH_LOG_" + fileDate + ext);
+            Path outputFile = appConfig.output().outputDir().resolve("RECON_RESULT_" + fileDate + ext);
 
-        long startNanos = System.nanoTime();
-        String fileDate = date.format(FILE_DATE_FORMAT);
-        String ext = appConfig.fileExtension();
-        Path npciFile = appConfig.input().npciDir().resolve("NPCI_TXN_" + fileDate + ext);
-        Path switchFile = appConfig.input().switchDir().resolve("SWITCH_LOG_" + fileDate + ext);
-        Path outputFile = appConfig.output().outputDir().resolve("RECON_RESULT_" + fileDate + ext);
+            long reconStartNanos = System.nanoTime();
+            List<NpciRecord> npciRows = fileParserService.parseNpciFile(npciFile);
+            List<SwitchRecord> switchRows = fileParserService.parseSwitchFile(switchFile);
 
-        List<NpciRecord> npciRows = fileParserService.parseNpciFile(npciFile);
-        List<SwitchRecord> switchRows = fileParserService.parseSwitchFile(switchFile);
+            Map<String, NpciRecord> npciByUtr = new LinkedHashMap<>();
+            Map<String, SwitchRecord> switchByUtr = new LinkedHashMap<>();
+            for (NpciRecord row : npciRows) npciByUtr.put(row.utr(), row);
+            for (SwitchRecord row : switchRows) switchByUtr.put(row.utr(), row);
 
-        npciTransactionRepository.saveAll(npciRows.stream().map(row -> toEntity(row, date)).toList());
-        switchLogRepository.saveAll(switchRows.stream().map(row -> toEntity(row, date)).toList());
+            List<ReconResultRecord> results = new ArrayList<>();
+            TreeSet<String> utrs = new TreeSet<>();
+            utrs.addAll(npciByUtr.keySet());
+            utrs.addAll(switchByUtr.keySet());
 
-        Map<String, NpciRecord> npciByUtr = new LinkedHashMap<>();
-        Map<String, SwitchRecord> switchByUtr = new LinkedHashMap<>();
-        for (NpciRecord row : npciRows) npciByUtr.put(row.utr(), row);
-        for (SwitchRecord row : switchRows) switchByUtr.put(row.utr(), row);
+            for (String utr : utrs) {
+                NpciRecord npci = npciByUtr.get(utr);
+                SwitchRecord sw = switchByUtr.get(utr);
+                ReconStatus status = resolveStatus(npci, sw);
+                results.add(new ReconResultRecord(
+                    utr,
+                    npci == null ? null : npci.amount(),
+                    sw == null ? null : sw.amount(),
+                    npci == null ? null : npci.status(),
+                    sw == null ? null : sw.status(),
+                    status.code(),
+                    status.remarks()
+                ));
+            }
 
-        List<ReconResultRecord> results = new ArrayList<>();
-        TreeSet<String> utrs = new TreeSet<>();
-        utrs.addAll(npciByUtr.keySet());
-        utrs.addAll(switchByUtr.keySet());
+            long reconciliationMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - reconStartNanos);
 
-        for (String utr : utrs) {
-            NpciRecord npci = npciByUtr.get(utr);
-            SwitchRecord sw = switchByUtr.get(utr);
-            ReconStatus status = resolveStatus(npci, sw);
-            results.add(new ReconResultRecord(
-                utr,
-                npci == null ? null : npci.amount(),
-                sw == null ? null : sw.amount(),
-                npci == null ? null : npci.status(),
-                sw == null ? null : sw.status(),
-                status.code(),
-                status.remarks()
-            ));
+            npciTransactionRepository.saveAll(npciRows.stream().map(row -> toEntity(row, date)).toList());
+            switchLogRepository.saveAll(switchRows.stream().map(row -> toEntity(row, date)).toList());
+            reconResultRepository.saveAll(results.stream().map(row -> toEntity(row, date)).toList());
+            npciTransactionRepository.flush();
+            switchLogRepository.flush();
+            reconResultRepository.flush();
+            fileWriterService.writeReconResult(results, outputFile);
+
+            return new RunOutcome(date, npciRows.size(), switchRows.size(), results, outputFile, reconciliationMillis);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
-
-        reconResultRepository.saveAll(results.stream().map(row -> toEntity(row, date)).toList());
-        fileWriterService.writeReconResult(results, outputFile);
-
-        long durationMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
-        return toRunSummary(date, npciRows.size(), switchRows.size(), results, outputFile, durationMillis);
     }
+
+    private record RunOutcome(LocalDate date, int npciCount, int switchCount, List<ReconResultRecord> results, Path outputFile,
+                              long reconciliationMillis) {}
 
     @Transactional(readOnly = true)
     public ReconSummary getResults(LocalDate date) {
@@ -123,7 +150,7 @@ public class ReconService {
         long statusMismatch = results.stream().filter(r -> "STATUS_MISMATCH".equals(r.reconStatus())).count();
 
         return new ReconSummary(date, 0, 0, matched, switchMissing, npciMissing, amountMismatch, statusMismatch, null,
-            "COMPLETED", null, new ReconSummary.Summary(results.size(), matched, results.size() - matched), results);
+            "COMPLETED", null, null, new ReconSummary.Summary(results.size(), matched, results.size() - matched), results);
     }
 
     private ReconStatus resolveStatus(@Nullable NpciRecord npci, @Nullable SwitchRecord sw) {
@@ -191,13 +218,13 @@ public class ReconService {
     }
 
     private ReconSummary toRunSummary(LocalDate date, int npciCount, int switchCount, List<ReconResultRecord> results,
-                                      Path outputFile, long durationMillis) {
+                                      Path outputFile, long reconciliationMillis, long durationMillis) {
         long matched = results.stream().filter(r -> "MATCHED".equals(r.reconStatus())).count();
         long switchMissing = results.stream().filter(r -> "SWITCH_MISSING".equals(r.reconStatus())).count();
         long npciMissing = results.stream().filter(r -> "NPCI_MISSING".equals(r.reconStatus())).count();
         long amountMismatch = results.stream().filter(r -> "AMOUNT_MISMATCH".equals(r.reconStatus())).count();
         long statusMismatch = results.stream().filter(r -> "STATUS_MISMATCH".equals(r.reconStatus())).count();
         return new ReconSummary(date, npciCount, switchCount, matched, switchMissing, npciMissing, amountMismatch, statusMismatch,
-            outputFile.toString().replace('\\', '/'), "COMPLETED", durationMillis, null, null);
+            outputFile.toString().replace('\\', '/'), "COMPLETED", reconciliationMillis, durationMillis, null, null);
     }
 }

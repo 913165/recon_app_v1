@@ -3,14 +3,22 @@
     virtual:
       enabled: true
   datasource:
-    url: jdbc:postgresql://localhost:5432/recondb
+    # reWriteBatchedInserts: driver rewrites batched INSERTs for fewer round-trips to PostgreSQL
+    url: jdbc:postgresql://localhost:5432/recondb?reWriteBatchedInserts=true
     username: recon_user
     password: recon_pass
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
       ddl-auto: validate
+    # Off in prod: logging every SQL adds latency (I/O) on bulk inserts. Use true only when debugging.
     show-sql: true
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 100
+        order_inserts: true
+        order_updates: true
   sql:
     init:
       mode: always

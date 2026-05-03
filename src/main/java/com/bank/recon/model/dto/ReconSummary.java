@@ -14,7 +14,15 @@ public record ReconSummary(
     long statusMismatch,
     String outputFile,
     String status,
-    /** Wall-clock time for the full run (parse, persist, match, write). Null when not measured (e.g. GET results). */
+    /**
+     * Parse input files, match NPCI vs Switch, build recon result rows in memory. Excludes all DB writes, flush, output file, and commit.
+     * Null when not measured (e.g. GET results).
+     */
+    Long reconciliationMillis,
+    /**
+     * Full server time for the transactional run: persistence, flushes, result file write, and JDBC commit. Excludes HTTP and JSON encoding.
+     * Null when not measured (e.g. GET results).
+     */
     Long durationMillis,
     Summary summary,
     List<ReconResultRecord> results
