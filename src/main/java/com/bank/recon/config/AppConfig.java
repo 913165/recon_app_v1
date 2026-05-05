@@ -19,13 +19,21 @@ public record AppConfig(InputPaths input, OutputPaths output, String extension) 
         return "." + e;
     }
 
-    public record InputPaths(String npciPath, String switchPath) {
+    public record InputPaths(String npciPath, String switchPath, String cbsPath) {
         public Path npciDir() {
             return Path.of(npciPath);
         }
 
         public Path switchDir() {
             return Path.of(switchPath);
+        }
+
+        public Path cbsDir() {
+            String p = cbsPath;
+            if (p == null || p.isBlank()) {
+                p = "data/input/cbs";
+            }
+            return Path.of(p);
         }
     }
 

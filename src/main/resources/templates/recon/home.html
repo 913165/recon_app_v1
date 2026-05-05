@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>UPI Recon — Run</title>
+  <link rel="stylesheet" th:href="@{/css/recon.css}"/>
+</head>
+<body>
+<header>
+  <h1>UPI reconciliation</h1>
+  <nav>
+    <a th:href="@{/ui}">Run</a>
+    <a th:href="@{/ui/results(date=${date})}">View results</a>
+    <span style="color: var(--muted);">REST under <code>/api/recon/</code></span>
+  </nav>
+</header>
+<main>
+  <div class="alert alert-error" th:if="${errorMessage != null}" th:text="${errorMessage}">Error</div>
+  <div class="alert alert-success" th:if="${successMessage != null}" th:text="${successMessage}">OK</div>
+  <div class="alert alert-info" th:if="${infoMessage != null}" th:text="${infoMessage}">Info</div>
+
+  <div class="card">
+    <h2>Run reconciliation</h2>
+    <p style="color: var(--muted); font-size: 0.9rem; margin: 0 0 1rem;">
+      Expects pipe-delimited files for the date:
+      <code>NPCI_TXN_<span th:text="${date}">DATE</span></code>,
+      <code>SWITCH_LOG_<span th:text="${date}">DATE</span></code>,
+      <code>CBS_EXTRACT_<span th:text="${date}">DATE</span></code>
+      under configured input folders.
+    </p>
+    <form th:action="@{/ui/run}" method="post">
+      <label for="date">Business date (yyyyMMdd)</label>
+      <input id="date" name="date" type="text" maxlength="8" pattern="\d{8}" required th:value="${date}"/>
+      <div>
+        <button type="submit">Run recon</button>
+        <a class="btn secondary" style="margin-left: 0.5rem;" th:href="@{/ui/results(date=${date})}">View results only</a>
+      </div>
+    </form>
+  </div>
+
+  <footer>
+    JSON API: <code>POST /api/recon/run?date=yyyyMMdd</code> · <code>GET /api/recon/results?date=yyyyMMdd</code>
+  </footer>
+</main>
+</body>
+</html>

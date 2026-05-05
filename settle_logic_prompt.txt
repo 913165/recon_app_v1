@@ -1,0 +1,190 @@
+In our existing  UPI Recon app
+that already reconciles 3 files:
+  - NPCI Transaction File     (npci_transactions table)
+  - Switch Log File           (switch_logs table)
+  - CBS Extract File          (cbs_extracts table)
+
+Row-level recon already works using UTR as join key.
+recon_results table already has rows with statuses:
+MATCHED / SWITCH_MISSING / NPCI_MISSING / CBS_MISSING /
+AMOUNT_MISMATCH / STATUS_MISMATCH / DUPLICATE_UTR
+
+Now add Settlement File reconciliation as the 4th and final step.
+
+════════════════════════════════════════════════════════
+SETTLEMENT FILE — INPUT
+════════════════════════════════════════════════════════
+
+Location : /data/input/npci/NPCI_SETTLEMENT_20240101.txt
+Format   : Pipe-delimited ( | ), UTF-8, with header row
+
+Columns:
+SETTLEMENT_DATE|BANK_CODE|TOTAL_TXN|TOTAL_DEBIT|TOTAL_CREDIT|NET_AMOUNT|RBI_REF|STATUS
+
+Sample file content:
+SETTLEMENT_DATE|BANK_CODE|TOTAL_TXN|TOTAL_DEBIT|TOTAL_CREDIT|NET_AMOUNT|RBI_REF|STATUS
+20240101|HDFC|10|7500.00|5500.00|-2000.00|RBI2024010001|SETTLED
+
+NOTE: This file has only 1 data row per day (summary level — not per UTR).
+
+════════════════════════════════════════════════════════
+WHAT TO RECONCILE
+════════════════════════════════════════════════════════
+
+This is NOT row-by-row. It is summary-level — 1 check per day.
+
+Step 1: Read NET_AMOUNT from Settlement File
+        e.g. -2000.00 (means bank owes ₹2000 net to NPCI)
+
+Step 2: Calculate your own net from npci_transactions table:
+        YOUR_NET = SUM(amount WHERE status='SUCCESS' AND dr_cr='DR' AND recon_date=date)
+                 - SUM(amount WHERE status='SUCCESS' AND dr_cr='CR' AND recon_date=date)
+
+        If dr_cr column doesn't exist in npci_transactions, use:
+        YOUR_NET = SUM(debit amounts) - SUM(credit amounts)
+        from recon_results WHERE recon_status='MATCHED' AND recon_date=date
+
+Step 3: Compare
+        YOUR_NET == NET_AMOUNT from file?  → SETTLEMENT_MATCHED
+        Difference > 0?                   → SETTLEMENT_MISMATCH
+
+Step 4: Save result to settlement_records table (create if not exists)
+
+════════════════════════════════════════════════════════
+NEW TABLE — settlement_records
+════════════════════════════════════════════════════════
+
+CREATE TABLE settlement_records (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    recon_date          DATE NOT NULL UNIQUE,
+    bank_code           VARCHAR(20),
+    total_txn           INTEGER,
+    npci_total_debit    NUMERIC(15,2),
+    npci_total_credit   NUMERIC(15,2),
+    npci_net_amount     NUMERIC(15,2),
+    calculated_net      NUMERIC(15,2),
+    difference          NUMERIC(15,2),
+    rbi_ref             VARCHAR(50),
+    npci_status         VARCHAR(20),
+    settlement_status   VARCHAR(30) NOT NULL,
+    remarks             TEXT,
+    created_at          TIMESTAMP DEFAULT now()
+);
+
+settlement_status values:
+  SETTLEMENT_MATCHED   — calculated_net == npci_net_amount
+  SETTLEMENT_MISMATCH  — difference != 0
+  SETTLEMENT_PENDING   — settlement file not yet received
+
+════════════════════════════════════════════════════════
+WHAT TO BUILD — ADD TO EXISTING APP
+════════════════════════════════════════════════════════
+
+1. SettlementRecord.java
+   JPA @Entity for settlement_records table
+   Add to schema.sql
+
+2. SettlementRecordRepository.java
+   JpaRepository<SettlementRecord, UUID>
+   Add: Optional<SettlementRecord> findByReconDate(LocalDate date)
+
+3. SettlementFileParser  — add to existing FileParserService.java
+   Method: parseSettlementFile(Path filePath) → SettlementFileRecord
+   SettlementFileRecord is a Java 25 Record:
+   record SettlementFileRecord(
+       LocalDate settlementDate,
+       String bankCode,
+       int totalTxn,
+       BigDecimal totalDebit,
+       BigDecimal totalCredit,
+       BigDecimal netAmount,
+       String rbiRef,
+       String status
+   )
+
+4. SettlementReconService.java  (new service)
+   Method: reconcileSettlement(LocalDate date) → SettlementResult
+
+   Logic:
+     a. Read NPCI_SETTLEMENT_{date}.txt via FileParserService
+     b. Calculate YOUR_NET from existing recon_results or npci_transactions
+     c. Compare with npci_net_amount using BigDecimal.compareTo()
+        NEVER use == or .equals() for BigDecimal comparison
+     d. Calculate difference = YOUR_NET - npci_net_amount
+     e. Set settlement_status:
+        difference.compareTo(BigDecimal.ZERO) == 0
+          → SETTLEMENT_MATCHED
+        else
+          → SETTLEMENT_MISMATCH
+     f. Save to settlement_records table
+     g. Return SettlementResult record
+
+   SettlementResult record:
+   record SettlementResult(
+       LocalDate date,
+       BigDecimal npciNet,
+       BigDecimal calculatedNet,
+       BigDecimal difference,
+       String settlementStatus,
+       String rbiRef,
+       String remarks
+   )
+
+5. Update ReconService.java — existing runRecon() method
+   After existing 3-way match completes, call:
+   settlementReconService.reconcileSettlement(date)
+   This makes settlement recon part of the same POST /api/recon/run call.
+
+6. Update POST /api/recon/run response JSON — add settlement result:
+   {
+     "date": "2024-01-01",
+     "totalNpciRows": 10,
+     "totalSwitchRows": 9,
+     "totalCbsRows": 10,
+     "matched": 6,
+     "switchMissing": 1,
+     "npciMissing": 1,
+     "amountMismatch": 1,
+     "statusMismatch": 1,
+     "outputFile": "/data/output/RECON_RESULT_20240101.txt",
+     "settlement": {
+       "npciNet": -2000.00,
+       "calculatedNet": -2000.00,
+       "difference": 0.00,
+       "status": "SETTLEMENT_MATCHED",
+       "rbiRef": "RBI2024010001"
+     },
+     "status": "COMPLETED"
+   }
+
+7. Add new GET endpoint to ReconController.java:
+   GET /api/recon/settlement?date=20240101
+   Returns the settlement_records row for that date as JSON.
+   404 if not found.
+
+════════════════════════════════════════════════════════
+SAMPLE SETTLEMENT FILE TO CREATE
+════════════════════════════════════════════════════════
+
+Create this file at /data/input/npci/NPCI_SETTLEMENT_20240101.txt:
+
+SETTLEMENT_DATE|BANK_CODE|TOTAL_TXN|TOTAL_DEBIT|TOTAL_CREDIT|NET_AMOUNT|RBI_REF|STATUS
+20240101|HDFC|10|7500.00|5500.00|-2000.00|RBI2024010001|SETTLED
+
+Test scenario 1 — MATCHED:
+  Use NET_AMOUNT that equals your calculated net from existing test data.
+
+Test scenario 2 — MISMATCH:
+  Change NET_AMOUNT to -2050.00 to trigger SETTLEMENT_MISMATCH.
+  Difference should show as 50.00 in the response.
+
+════════════════════════════════════════════════════════
+DO NOT CHANGE
+════════════════════════════════════════════════════════
+
+- Do not touch existing 3-way match logic
+- Do not change existing table structures
+- Do not change existing API response fields
+  (only ADD the "settlement" block to the existing response)
+- Do not change existing file parser logic
+- Keep all existing exception types as-is

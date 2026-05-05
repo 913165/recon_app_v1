@@ -10,4 +10,5 @@ import com.bank.recon.model.entity.NpciTransaction;
 
 public interface NpciTransactionRepository extends JpaRepository<NpciTransaction, UUID> {
     List<NpciTransaction> findAllByReconDateOrderByUtrAsc(LocalDate reconDate);
+    long countByReconDate(LocalDate reconDate);
 }

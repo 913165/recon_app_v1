@@ -19,9 +19,18 @@ public class FileWriterService {
     public void writeReconResult(List<ReconResultRecord> results, Path outputPath) throws IOException {
         Files.createDirectories(outputPath.getParent());
         List<String> lines = new ArrayList<>();
-        lines.add("UTR|NPCI_AMOUNT|SWITCH_AMOUNT|NPCI_STATUS|SWITCH_STATUS|RECON_STATUS|REMARKS");
+        lines.add("UTR|NPCI_AMOUNT|SWITCH_AMOUNT|CBS_AMOUNT|NPCI_STATUS|SWITCH_STATUS|CBS_STATUS|RECON_STATUS|REMARKS");
         for (ReconResultRecord row : results) {
-            lines.add(String.join("|", safe(row.utr()), amount(row.npciAmount()), amount(row.switchAmount()), safe(row.npciStatus()), safe(row.switchStatus()), safe(row.reconStatus()), safe(row.remarks())));
+            lines.add(String.join("|",
+                safe(row.utr()),
+                amount(row.npciAmount()),
+                amount(row.switchAmount()),
+                amount(row.cbsAmount()),
+                safe(row.npciStatus()),
+                safe(row.switchStatus()),
+                safe(row.cbsStatus()),
+                safe(row.reconStatus()),
+                safe(row.remarks())));
         }
         Files.write(outputPath, lines, StandardCharsets.UTF_8);
     }

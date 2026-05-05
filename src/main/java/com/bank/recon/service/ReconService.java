@@ -16,6 +16,10 @@ import java.util.Map;
 import java.util.TreeSet;
 
 import org.jspecify.annotations.Nullable;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,19 +27,24 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import com.bank.recon.config.AppConfig;
 import com.bank.recon.exception.ReconAlreadyRunException;
+import com.bank.recon.model.dto.CbsRecord;
 import com.bank.recon.model.dto.NpciRecord;
 import com.bank.recon.model.dto.ReconResultRecord;
 import com.bank.recon.model.dto.ReconSummary;
+import com.bank.recon.model.dto.SettlementResult;
 import com.bank.recon.model.dto.SwitchRecord;
+import com.bank.recon.model.entity.CbsExtract;
 import com.bank.recon.model.entity.NpciTransaction;
 import com.bank.recon.model.entity.ReconResult;
 import com.bank.recon.model.entity.SwitchLog;
 import com.bank.recon.model.status.AmountMismatch;
+import com.bank.recon.model.status.CbsMissing;
 import com.bank.recon.model.status.Matched;
 import com.bank.recon.model.status.NpciMissing;
 import com.bank.recon.model.status.ReconStatus;
 import com.bank.recon.model.status.StatusMismatch;
 import com.bank.recon.model.status.SwitchMissing;
+import com.bank.recon.repository.CbsExtractRepository;
 import com.bank.recon.repository.NpciTransactionRepository;
 import com.bank.recon.repository.ReconResultRepository;
 import com.bank.recon.repository.SwitchLogRepository;
@@ -48,19 +57,24 @@ public class ReconService {
     private final FileWriterService fileWriterService;
     private final NpciTransactionRepository npciTransactionRepository;
     private final SwitchLogRepository switchLogRepository;
+    private final CbsExtractRepository cbsExtractRepository;
     private final ReconResultRepository reconResultRepository;
+    private final SettlementReconService settlementReconService;
     private final AppConfig appConfig;
     private final TransactionTemplate transactionTemplate;
 
     public ReconService(FileParserService fileParserService, FileWriterService fileWriterService,
                         NpciTransactionRepository npciTransactionRepository, SwitchLogRepository switchLogRepository,
-                        ReconResultRepository reconResultRepository, AppConfig appConfig,
+                        CbsExtractRepository cbsExtractRepository, ReconResultRepository reconResultRepository,
+                        SettlementReconService settlementReconService, AppConfig appConfig,
                         PlatformTransactionManager transactionManager) {
         this.fileParserService = fileParserService;
         this.fileWriterService = fileWriterService;
         this.npciTransactionRepository = npciTransactionRepository;
         this.switchLogRepository = switchLogRepository;
+        this.cbsExtractRepository = cbsExtractRepository;
         this.reconResultRepository = reconResultRepository;
+        this.settlementReconService = settlementReconService;
         this.appConfig = appConfig;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -71,8 +85,8 @@ public class ReconService {
             // execute() returns only after PlatformTransactionManager.commit() finishes (JDBC commit included).
             RunOutcome outcome = transactionTemplate.execute(status -> runReconInTransaction(date));
             long durationMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
-            return toRunSummary(outcome.date(), outcome.npciCount(), outcome.switchCount(), outcome.results(), outcome.outputFile(),
-                outcome.reconciliationMillis(), durationMillis);
+            return toRunSummary(outcome.date(), outcome.npciCount(), outcome.switchCount(), outcome.cbsCount(), outcome.results(),
+                outcome.outputFile(), outcome.reconciliationMillis(), durationMillis, outcome.settlement());
         } catch (UncheckedIOException e) {
             throw (IOException) e.getCause();
         }
@@ -87,32 +101,40 @@ public class ReconService {
             String ext = appConfig.fileExtension();
             Path npciFile = appConfig.input().npciDir().resolve("NPCI_TXN_" + fileDate + ext);
             Path switchFile = appConfig.input().switchDir().resolve("SWITCH_LOG_" + fileDate + ext);
+            Path cbsFile = appConfig.input().cbsDir().resolve("CBS_EXTRACT_" + fileDate + ext);
             Path outputFile = appConfig.output().outputDir().resolve("RECON_RESULT_" + fileDate + ext);
 
             long reconStartNanos = System.nanoTime();
             List<NpciRecord> npciRows = fileParserService.parseNpciFile(npciFile);
             List<SwitchRecord> switchRows = fileParserService.parseSwitchFile(switchFile);
+            List<CbsRecord> cbsRows = fileParserService.parseCbsFile(cbsFile);
 
             Map<String, NpciRecord> npciByUtr = new LinkedHashMap<>();
             Map<String, SwitchRecord> switchByUtr = new LinkedHashMap<>();
+            Map<String, CbsRecord> cbsByUtr = new LinkedHashMap<>();
             for (NpciRecord row : npciRows) npciByUtr.put(row.utr(), row);
             for (SwitchRecord row : switchRows) switchByUtr.put(row.utr(), row);
+            for (CbsRecord row : cbsRows) cbsByUtr.put(row.utr(), row);
 
             List<ReconResultRecord> results = new ArrayList<>();
             TreeSet<String> utrs = new TreeSet<>();
             utrs.addAll(npciByUtr.keySet());
             utrs.addAll(switchByUtr.keySet());
+            utrs.addAll(cbsByUtr.keySet());
 
             for (String utr : utrs) {
                 NpciRecord npci = npciByUtr.get(utr);
                 SwitchRecord sw = switchByUtr.get(utr);
-                ReconStatus status = resolveStatus(npci, sw);
+                CbsRecord cbs = cbsByUtr.get(utr);
+                ReconStatus status = resolveStatus(npci, sw, cbs);
                 results.add(new ReconResultRecord(
                     utr,
                     npci == null ? null : npci.amount(),
                     sw == null ? null : sw.amount(),
+                    cbs == null ? null : cbs.amount(),
                     npci == null ? null : npci.status(),
                     sw == null ? null : sw.status(),
+                    cbs == null ? null : cbs.status(),
                     status.code(),
                     status.remarks()
                 ));
@@ -122,43 +144,115 @@ public class ReconService {
 
             npciTransactionRepository.saveAll(npciRows.stream().map(row -> toEntity(row, date)).toList());
             switchLogRepository.saveAll(switchRows.stream().map(row -> toEntity(row, date)).toList());
+            cbsExtractRepository.saveAll(cbsRows.stream().map(row -> toCbsEntity(row, date)).toList());
             reconResultRepository.saveAll(results.stream().map(row -> toEntity(row, date)).toList());
             npciTransactionRepository.flush();
             switchLogRepository.flush();
+            cbsExtractRepository.flush();
             reconResultRepository.flush();
             fileWriterService.writeReconResult(results, outputFile);
 
-            return new RunOutcome(date, npciRows.size(), switchRows.size(), results, outputFile, reconciliationMillis);
+            BigDecimal calculatedNet = calculateMatchedNet(results);
+            SettlementResult settlement = settlementReconService.reconcileSettlement(date, calculatedNet);
+
+            return new RunOutcome(date, npciRows.size(), switchRows.size(), cbsRows.size(), results, outputFile, reconciliationMillis, settlement);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
     }
 
-    private record RunOutcome(LocalDate date, int npciCount, int switchCount, List<ReconResultRecord> results, Path outputFile,
-                              long reconciliationMillis) {}
+    private record RunOutcome(LocalDate date, int npciCount, int switchCount, int cbsCount, List<ReconResultRecord> results,
+                              Path outputFile, long reconciliationMillis, SettlementResult settlement) {}
 
     @Transactional(readOnly = true)
     public ReconSummary getResults(LocalDate date) {
         List<ReconResultRecord> results = reconResultRepository.findAllByReconDateOrderByUtrAsc(date).stream()
-            .map(row -> new ReconResultRecord(row.getUtr(), row.getNpciAmount(), row.getSwitchAmount(), row.getNpciStatus(), row.getSwitchStatus(), row.getReconStatus(), row.getRemarks()))
+            .map(this::toRecord)
             .toList();
 
         long matched = results.stream().filter(r -> "MATCHED".equals(r.reconStatus())).count();
         long switchMissing = results.stream().filter(r -> "SWITCH_MISSING".equals(r.reconStatus())).count();
         long npciMissing = results.stream().filter(r -> "NPCI_MISSING".equals(r.reconStatus())).count();
+        long cbsMissing = results.stream().filter(r -> "CBS_MISSING".equals(r.reconStatus())).count();
         long amountMismatch = results.stream().filter(r -> "AMOUNT_MISMATCH".equals(r.reconStatus())).count();
         long statusMismatch = results.stream().filter(r -> "STATUS_MISMATCH".equals(r.reconStatus())).count();
 
-        return new ReconSummary(date, 0, 0, matched, switchMissing, npciMissing, amountMismatch, statusMismatch, null,
-            "COMPLETED", null, null, new ReconSummary.Summary(results.size(), matched, results.size() - matched), results);
+        SettlementResult settlement = null;
+        try {
+            settlement = settlementReconService.getSettlement(date);
+        } catch (IllegalArgumentException ignored) {
+            // settlement not yet reconciled for this date
+        }
+
+        return new ReconSummary(date, 0, 0, 0, matched, switchMissing, npciMissing, cbsMissing, amountMismatch, statusMismatch, null,
+            "COMPLETED", null, null, settlement, new ReconSummary.Summary(results.size(), matched, results.size() - matched), results);
     }
 
-    private ReconStatus resolveStatus(@Nullable NpciRecord npci, @Nullable SwitchRecord sw) {
+    @Transactional(readOnly = true)
+    public ReconSummary getResultsOverview(LocalDate date) {
+        long totalResults = reconResultRepository.countByReconDate(date);
+        long matched = reconResultRepository.countByReconDateAndReconStatus(date, "MATCHED");
+        long switchMissing = reconResultRepository.countByReconDateAndReconStatus(date, "SWITCH_MISSING");
+        long npciMissing = reconResultRepository.countByReconDateAndReconStatus(date, "NPCI_MISSING");
+        long cbsMissing = reconResultRepository.countByReconDateAndReconStatus(date, "CBS_MISSING");
+        long amountMismatch = reconResultRepository.countByReconDateAndReconStatus(date, "AMOUNT_MISMATCH");
+        long statusMismatch = reconResultRepository.countByReconDateAndReconStatus(date, "STATUS_MISMATCH");
+        long npciRows = npciTransactionRepository.countByReconDate(date);
+        long switchRows = switchLogRepository.countByReconDate(date);
+        long cbsRows = cbsExtractRepository.countByReconDate(date);
+
+        return new ReconSummary(
+            date,
+            npciRows,
+            switchRows,
+            cbsRows,
+            matched,
+            switchMissing,
+            npciMissing,
+            cbsMissing,
+            amountMismatch,
+            statusMismatch,
+            null,
+            "COMPLETED",
+            null,
+            null,
+            null,
+            new ReconSummary.Summary(totalResults, matched, totalResults - matched),
+            List.of()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ReconResultRecord> getResultsPage(LocalDate date, int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), 1000);
+        Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.ASC, "utr"));
+        return reconResultRepository.findByReconDate(date, pageable).map(this::toRecord);
+    }
+
+    private ReconStatus resolveStatus(@Nullable NpciRecord npci, @Nullable SwitchRecord sw, @Nullable CbsRecord cbs) {
         if (npci != null && sw == null) return new SwitchMissing();
         if (npci == null) return new NpciMissing();
-        if (!amountMatches(npci.amount(), sw.amount())) return new AmountMismatch("Amount differs: NPCI=" + fmt(npci.amount()) + " Switch=" + fmt(sw.amount()));
-        if (!stringMatches(npci.status(), sw.status())) return new StatusMismatch("Status differs: NPCI=" + npci.status() + " Switch=" + sw.status());
+        if (cbs == null) return new CbsMissing();
+        if (!tripleAmountMatches(npci.amount(), sw.amount(), cbs.amount())) {
+            return new AmountMismatch("Amount differs: NPCI=" + fmt(npci.amount()) + " Switch=" + fmt(sw.amount()) + " CBS=" + fmt(cbs.amount()));
+        }
+        if (!tripleStringMatches(npci.status(), sw.status(), cbs.status())) {
+            return new StatusMismatch("Status differs: NPCI=" + str(npci.status()) + " Switch=" + str(sw.status()) + " CBS=" + str(cbs.status()));
+        }
         return new Matched();
+    }
+
+    private boolean tripleAmountMatches(@Nullable BigDecimal a, @Nullable BigDecimal b, @Nullable BigDecimal c) {
+        return amountMatches(a, b) && amountMatches(a, c);
+    }
+
+    private boolean tripleStringMatches(@Nullable String a, @Nullable String b, @Nullable String c) {
+        return stringMatches(a, b) && stringMatches(a, c);
+    }
+
+    private String str(@Nullable String s) {
+        return s == null ? "--" : s;
     }
 
     private boolean amountMatches(@Nullable BigDecimal a, @Nullable BigDecimal b) {
@@ -209,22 +303,63 @@ public class ReconService {
         e.setReconDate(date);
         e.setNpciAmount(row.npciAmount());
         e.setSwitchAmount(row.switchAmount());
+        e.setCbsAmount(row.cbsAmount());
         e.setNpciStatus(row.npciStatus());
         e.setSwitchStatus(row.switchStatus());
+        e.setCbsStatus(row.cbsStatus());
         e.setReconStatus(row.reconStatus());
         e.setRemarks(row.remarks());
         e.setCreatedAt(LocalDateTime.now());
         return e;
     }
 
-    private ReconSummary toRunSummary(LocalDate date, int npciCount, int switchCount, List<ReconResultRecord> results,
-                                      Path outputFile, long reconciliationMillis, long durationMillis) {
+    private ReconResultRecord toRecord(ReconResult row) {
+        return new ReconResultRecord(
+            row.getUtr(),
+            row.getNpciAmount(),
+            row.getSwitchAmount(),
+            row.getCbsAmount(),
+            row.getNpciStatus(),
+            row.getSwitchStatus(),
+            row.getCbsStatus(),
+            row.getReconStatus(),
+            row.getRemarks()
+        );
+    }
+
+    private CbsExtract toCbsEntity(CbsRecord row, LocalDate date) {
+        CbsExtract e = new CbsExtract();
+        e.setUtr(row.utr());
+        e.setAccountNo(row.accountNo());
+        e.setTxnDate(row.txnDate());
+        e.setTxnTime(row.txnTime());
+        e.setAmount(row.amount());
+        e.setDrCr(row.drCr());
+        e.setDescription(row.description());
+        e.setCbsRef(row.cbsRef());
+        e.setStatus(row.status());
+        e.setReconDate(date);
+        e.setCreatedAt(LocalDateTime.now());
+        return e;
+    }
+
+    private ReconSummary toRunSummary(LocalDate date, int npciCount, int switchCount, int cbsCount, List<ReconResultRecord> results,
+                                      Path outputFile, long reconciliationMillis, long durationMillis, SettlementResult settlement) {
         long matched = results.stream().filter(r -> "MATCHED".equals(r.reconStatus())).count();
         long switchMissing = results.stream().filter(r -> "SWITCH_MISSING".equals(r.reconStatus())).count();
         long npciMissing = results.stream().filter(r -> "NPCI_MISSING".equals(r.reconStatus())).count();
+        long cbsMissing = results.stream().filter(r -> "CBS_MISSING".equals(r.reconStatus())).count();
         long amountMismatch = results.stream().filter(r -> "AMOUNT_MISMATCH".equals(r.reconStatus())).count();
         long statusMismatch = results.stream().filter(r -> "STATUS_MISMATCH".equals(r.reconStatus())).count();
-        return new ReconSummary(date, npciCount, switchCount, matched, switchMissing, npciMissing, amountMismatch, statusMismatch,
-            outputFile.toString().replace('\\', '/'), "COMPLETED", reconciliationMillis, durationMillis, null, null);
+        return new ReconSummary(date, npciCount, switchCount, cbsCount, matched, switchMissing, npciMissing, cbsMissing, amountMismatch,
+            statusMismatch, outputFile.toString().replace('\\', '/'), "COMPLETED", reconciliationMillis, durationMillis, settlement, null, null);
+    }
+
+    private BigDecimal calculateMatchedNet(List<ReconResultRecord> results) {
+        return results.stream()
+            .filter(r -> "MATCHED".equals(r.reconStatus()))
+            .map(ReconResultRecord::npciAmount)
+            .filter(v -> v != null)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 }

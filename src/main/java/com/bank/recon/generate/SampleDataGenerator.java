@@ -13,7 +13,7 @@ import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Standalone entry point: writes pipe-delimited {@code .dat} NPCI and Switch files for load / integration tests.
+ * Standalone entry point: writes pipe-delimited {@code .dat} NPCI, Switch, and CBS extract files for load / integration tests.
  * <p>
  * Run (project root):
  * <pre>
@@ -24,7 +24,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public final class SampleDataGenerator {
 
     /** Used when no {@code -n} / positional count and no {@code RECON_GEN_COUNT} env. */
-    private static final int DEFAULT_ROW_COUNT = 1000000;
+    private static final int DEFAULT_ROW_COUNT = 1000;
 
     private static final String[] PAYER_VPAS = {
         "priya.reddy@ybl", "amit.kumar@oksbi", "sneha.menon@axl", "rohit.sharma@ybl",
@@ -58,18 +58,23 @@ public final class SampleDataGenerator {
             throw new UncheckedIOException(e);
         }
         int switchRows = opt.demoAnomalies ? opt.n - 1 : opt.n;
-        System.out.printf(Locale.ROOT, "Wrote %d NPCI rows and %d Switch rows:%n  %s%n  %s%n",
-            opt.n, switchRows, opt.npciFile, opt.switchFile);
+        System.out.printf(Locale.ROOT, "Wrote %d NPCI rows, %d Switch rows, %d CBS rows, and settlement file:%n  %s%n  %s%n  %s%n  %s%n",
+            opt.n, switchRows, opt.n, opt.npciFile, opt.switchFile, opt.cbsFile, opt.settlementFile);
     }
 
     private static void writePair(Args opt, Random random) throws IOException {
         Files.createDirectories(opt.npciDir);
         Files.createDirectories(opt.switchDir);
+        Files.createDirectories(opt.cbsDir);
         String date = opt.fileDate;
         StringBuilder npci = new StringBuilder();
         StringBuilder sw = new StringBuilder();
+        StringBuilder cbs = new StringBuilder();
+        BigDecimal totalDebit = BigDecimal.ZERO;
+        BigDecimal totalCredit = BigDecimal.ZERO;
         npci.append("UTR|RRN|TXN_DATE|TXN_TIME|AMOUNT|PAYER_VPA|PAYEE_VPA|STATUS\n");
         sw.append("UTR|RRN|TXN_DATE|TXN_TIME|AMOUNT|STATUS|RESPONSE_CODE|SWITCH_REF\n");
+        cbs.append("UTR|ACCOUNT_NO|TXN_DATE|TXN_TIME|AMOUNT|DR_CR|DESCRIPTION|CBS_REF|STATUS\n");
 
         for (int i = 1; i <= opt.n; i++) {
             String utr = buildUtr(date, i);
@@ -82,6 +87,28 @@ public final class SampleDataGenerator {
 
             npci.append(String.join("|", utr, rrn, date, time, amount.toPlainString(), payer, payee, npciStatus));
             npci.append('\n');
+            totalDebit = totalDebit.add(amount);
+
+            String accountNo = buildCbsAccountNo(i);
+            String cbsRef = i <= 999
+                ? "CBS" + String.format(Locale.ROOT, "%03d", i)
+                : "CBS" + String.format(Locale.ROOT, "%08d", i);
+            String cbsStatus = "SUCCESS";
+            if (opt.demoAnomalies && i == opt.n) {
+                cbsStatus = "FAILED";
+            }
+            String description = "UPI/" + utr + "/" + payee;
+            cbs.append(String.join("|",
+                utr,
+                accountNo,
+                date,
+                time,
+                amount.toPlainString(),
+                "DR",
+                description,
+                cbsRef,
+                cbsStatus));
+            cbs.append('\n');
 
             if (opt.demoAnomalies && i == opt.n - 2) {
                 continue;
@@ -104,6 +131,31 @@ public final class SampleDataGenerator {
 
         Files.writeString(opt.npciFile, npci.toString(), StandardCharsets.UTF_8);
         Files.writeString(opt.switchFile, sw.toString(), StandardCharsets.UTF_8);
+        Files.writeString(opt.cbsFile, cbs.toString(), StandardCharsets.UTF_8);
+
+        BigDecimal settlementNet = totalDebit.subtract(totalCredit);
+        if (opt.settlementMismatch) {
+            settlementNet = settlementNet.add(new BigDecimal("50.00"));
+        }
+        StringBuilder settlement = new StringBuilder();
+        settlement.append("SETTLEMENT_DATE|BANK_CODE|TOTAL_TXN|TOTAL_DEBIT|TOTAL_CREDIT|NET_AMOUNT|RBI_REF|STATUS\n");
+        settlement.append(String.join("|",
+            date,
+            "HDFC",
+            String.valueOf(opt.n),
+            totalDebit.toPlainString(),
+            totalCredit.toPlainString(),
+            settlementNet.toPlainString(),
+            "RBI" + date + "0001",
+            "SETTLED"));
+        settlement.append('\n');
+        Files.writeString(opt.settlementFile, settlement.toString(), StandardCharsets.UTF_8);
+    }
+
+    /** Matches sample pattern {@code HDFC0001001} for index 1. */
+    private static String buildCbsAccountNo(int i) {
+        int suffix = 1000 + i;
+        return "HDFC" + String.format(Locale.ROOT, "%07d", suffix);
     }
 
     private static Args parseArgs(String[] raw) {
@@ -117,6 +169,8 @@ public final class SampleDataGenerator {
                 case "-d", "--date" -> a.fileDate = require(++i, raw, "date");
                 case "--npci-dir" -> a.npciDir = Path.of(require(++i, raw, "npci-dir"));
                 case "--switch-dir" -> a.switchDir = Path.of(require(++i, raw, "switch-dir"));
+                case "--cbs-dir" -> a.cbsDir = Path.of(require(++i, raw, "cbs-dir"));
+                case "--settlement-mismatch" -> a.settlementMismatch = true;
                 case "--seed" -> a.seed = Long.parseLong(require(++i, raw, "seed"));
                 case "--demo-anomalies" -> a.demoAnomalies = true;
                 default -> {
@@ -134,6 +188,8 @@ public final class SampleDataGenerator {
         String ext = normalizeExtension(System.getenv("RECON_FILE_EXT"));
         a.npciFile = a.npciDir.resolve("NPCI_TXN_" + a.fileDate + "." + ext);
         a.switchFile = a.switchDir.resolve("SWITCH_LOG_" + a.fileDate + "." + ext);
+        a.cbsFile = a.cbsDir.resolve("CBS_EXTRACT_" + a.fileDate + "." + ext);
+        a.settlementFile = a.npciDir.resolve("NPCI_SETTLEMENT_" + a.fileDate + ".txt");
         return a;
     }
 
@@ -150,6 +206,10 @@ public final class SampleDataGenerator {
         if (a.switchDir == null) {
             String env = getenvOrBlank("RECON_SWITCH_PATH");
             a.switchDir = env != null ? Path.of(env) : Path.of("data/input/switch");
+        }
+        if (a.cbsDir == null) {
+            String env = getenvOrBlank("RECON_CBS_PATH");
+            a.cbsDir = env != null ? Path.of(env) : Path.of("data/input/cbs");
         }
         if (a.seed == null) {
             String env = getenvOrBlank("RECON_GEN_SEED");
@@ -213,7 +273,7 @@ public final class SampleDataGenerator {
 
     private static void printHelp() {
         System.out.printf(Locale.ROOT, """
-            Generate matching NPCI and Switch files (pipe-delimited, UTF-8).
+            Generate matching NPCI, Switch, CBS extract, and settlement files (pipe-delimited, UTF-8).
 
             Usage:
               SampleDataGenerator [n] [options]
@@ -224,6 +284,7 @@ public final class SampleDataGenerator {
               Date            → today (yyyyMMdd), or env RECON_GEN_DATE
               --npci-dir      → env RECON_NPCI_PATH, else data/input/npci
               --switch-dir    → env RECON_SWITCH_PATH, else data/input/switch
+              --cbs-dir       → env RECON_CBS_PATH, else data/input/cbs
               File extension  → env RECON_FILE_EXT (same as Spring app), else dat
               --seed          → env RECON_GEN_SEED if set
 
@@ -232,6 +293,8 @@ public final class SampleDataGenerator {
               -d, --date <yyyyMMdd>  File date in filenames and TXN_DATE column
               --npci-dir <path>
               --switch-dir <path>
+              --cbs-dir <path>
+              --settlement-mismatch  Add +50.00 to settlement NET_AMOUNT to force mismatch
               --seed <long>
               --demo-anomalies    Row (n-2) only in NPCI; (n-1) amount +0.01 on switch;
                                   row n FAILED on switch. Requires n >= 3.
@@ -239,7 +302,9 @@ public final class SampleDataGenerator {
 
             Output:
               <npci-dir>/NPCI_TXN_<date>.<ext>
+              <npci-dir>/NPCI_SETTLEMENT_<date>.txt
               <switch-dir>/SWITCH_LOG_<date>.<ext>
+              <cbs-dir>/CBS_EXTRACT_<date>.<ext>
             """, DEFAULT_ROW_COUNT);
     }
 
@@ -248,10 +313,14 @@ public final class SampleDataGenerator {
         String fileDate;
         Path npciDir;
         Path switchDir;
+        Path cbsDir;
         Path npciFile;
+        Path settlementFile;
         Path switchFile;
+        Path cbsFile;
         Long seed;
         boolean showHelp;
         boolean demoAnomalies;
+        boolean settlementMismatch;
     }
 }

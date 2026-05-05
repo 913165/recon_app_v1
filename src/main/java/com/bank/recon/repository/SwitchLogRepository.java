@@ -10,4 +10,5 @@ import com.bank.recon.model.entity.SwitchLog;
 
 public interface SwitchLogRepository extends JpaRepository<SwitchLog, UUID> {
     List<SwitchLog> findAllByReconDateOrderByUtrAsc(LocalDate reconDate);
+    long countByReconDate(LocalDate reconDate);
 }

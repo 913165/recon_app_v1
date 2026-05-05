@@ -31,6 +31,10 @@ public class ReconResult {
     private String npciStatus;
     @Column(name = "switch_status", length = 20)
     private String switchStatus;
+    @Column(name = "cbs_amount", precision = 15, scale = 2)
+    private BigDecimal cbsAmount;
+    @Column(name = "cbs_status", length = 20)
+    private String cbsStatus;
     @Column(name = "recon_status", nullable = false, length = 30)
     private String reconStatus;
     @Column(columnDefinition = "TEXT")
@@ -52,6 +56,10 @@ public class ReconResult {
     public void setNpciStatus(String npciStatus) { this.npciStatus = npciStatus; }
     public String getSwitchStatus() { return switchStatus; }
     public void setSwitchStatus(String switchStatus) { this.switchStatus = switchStatus; }
+    public BigDecimal getCbsAmount() { return cbsAmount; }
+    public void setCbsAmount(BigDecimal cbsAmount) { this.cbsAmount = cbsAmount; }
+    public String getCbsStatus() { return cbsStatus; }
+    public void setCbsStatus(String cbsStatus) { this.cbsStatus = cbsStatus; }
     public String getReconStatus() { return reconStatus; }
     public void setReconStatus(String reconStatus) { this.reconStatus = reconStatus; }
     public String getRemarks() { return remarks; }

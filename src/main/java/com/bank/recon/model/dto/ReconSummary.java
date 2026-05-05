@@ -7,9 +7,11 @@ public record ReconSummary(
     LocalDate date,
     long totalNpciRows,
     long totalSwitchRows,
+    long totalCbsRows,
     long matched,
     long switchMissing,
     long npciMissing,
+    long cbsMissing,
     long amountMismatch,
     long statusMismatch,
     String outputFile,
@@ -24,6 +26,7 @@ public record ReconSummary(
      * Null when not measured (e.g. GET results).
      */
     Long durationMillis,
+    SettlementResult settlement,
     Summary summary,
     List<ReconResultRecord> results
 ) {

@@ -25,11 +25,12 @@
 
 recon:
   file:
-    # Input/output filenames use: NPCI_TXN_{date}.{ext}, SWITCH_LOG_{date}.{ext}, RECON_RESULT_{date}.{ext}
+    # Input/output filenames use: NPCI_TXN_{date}.{ext}, SWITCH_LOG_{date}.{ext}, CBS_EXTRACT_{date}.{ext}, RECON_RESULT_{date}.{ext}
     extension: ${RECON_FILE_EXT:dat}
     input:
       # Relative to working dir (run Maven from project root). Override for Docker: RECON_NPCI_PATH=/data/input/npci
       npci-path: ${RECON_NPCI_PATH:data/input/npci}
       switch-path: ${RECON_SWITCH_PATH:data/input/switch}
+      cbs-path: ${RECON_CBS_PATH:data/input/cbs}
     output:
       path: ${RECON_OUTPUT_PATH:data/output}

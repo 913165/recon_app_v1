@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title th:text="'UPI Recon — Results ' + ${date}">UPI Recon — Results</title>
+  <link rel="stylesheet" th:href="@{/css/recon.css}"/>
+</head>
+<body>
+<header>
+  <h1>Reconciliation results</h1>
+  <nav>
+    <a th:href="@{/ui}">Run</a>
+    <a th:href="@{/ui/results(date=${date})}">Refresh</a>
+    <a th:href="@{/api/recon/results(date=${date})}" target="_blank" rel="noopener">REST (JSON)</a>
+  </nav>
+</header>
+<main>
+  <div class="alert alert-success" th:if="${successMessage != null}" th:text="${successMessage}">OK</div>
+  <div class="alert alert-info" th:if="${infoMessage != null}" th:text="${infoMessage}">Info</div>
+
+  <div class="card">
+    <h2 th:text="'Date ' + ${#temporals.format(summary.date, 'yyyy-MM-dd')} + ' (' + ${date} + ')'">Date</h2>
+    <p th:if="${summary.outputFile != null}" style="font-size: 0.85rem; color: var(--muted); margin: 0 0 1rem;">
+      Output file: <code th:text="${summary.outputFile}">path</code>
+    </p>
+    <div class="stats">
+      <div class="stat">
+        <div class="value" th:text="${summary.totalNpciRows}">0</div>
+        <div class="label">NPCI rows</div>
+      </div>
+      <div class="stat">
+        <div class="value" th:text="${summary.totalSwitchRows}">0</div>
+        <div class="label">Switch rows</div>
+      </div>
+      <div class="stat">
+        <div class="value" th:text="${summary.totalCbsRows}">0</div>
+        <div class="label">CBS rows</div>
+      </div>
+      <div class="stat">
+        <div class="value" th:text="${summary.matched}">0</div>
+        <div class="label">Matched</div>
+      </div>
+      <div class="stat">
+        <div class="value" th:text="${summary.switchMissing}">0</div>
+        <div class="label">Switch missing</div>
+      </div>
+      <div class="stat">
+        <div class="value" th:text="${summary.npciMissing}">0</div>
+        <div class="label">NPCI missing</div>
+      </div>
+      <div class="stat">
+        <div class="value" th:text="${summary.cbsMissing}">0</div>
+        <div class="label">CBS missing</div>
+      </div>
+      <div class="stat">
+        <div class="value" th:text="${summary.amountMismatch}">0</div>
+        <div class="label">Amount mismatch</div>
+      </div>
+      <div class="stat">
+        <div class="value" th:text="${summary.statusMismatch}">0</div>
+        <div class="label">Status mismatch</div>
+      </div>
+    </div>
+    <p th:if="${summary.reconciliationMillis != null}" style="margin: 1rem 0 0; font-size: 0.8rem; color: var(--muted);">
+      Reconciliation phase: <span th:text="${summary.reconciliationMillis}">0</span> ms ·
+      Total run: <span th:text="${summary.durationMillis != null ? summary.durationMillis : '—'}">—</span> ms
+    </p>
+  </div>
+
+  <div class="card" th:if="${rows == null || rows.isEmpty()}">
+    <h2>Detail rows</h2>
+    <p style="color: var(--muted); margin: 0;">No reconciliation rows stored for this date. Run recon first or pick another date.</p>
+  </div>
+
+  <div class="card" th:if="${rows != null && !rows.isEmpty()}">
+    <h2>
+      Detail rows
+      (<span th:text="${totalElements}">0</span> total,
+      page <span th:text="${currentPage}">1</span>/<span th:text="${totalPages}">1</span>)
+    </h2>
+    <div class="pager">
+      <a class="btn secondary" th:if="${hasPrev}"
+         th:href="@{/ui/results(date=${date},page=${prevPage},size=${pageSize})}">Previous</a>
+      <a class="btn secondary" th:if="${hasNext}"
+         th:href="@{/ui/results(date=${date},page=${nextPage},size=${pageSize})}">Next</a>
+      <span style="color: var(--muted); margin-left: 0.5rem;">
+        Page size:
+      </span>
+      <a th:href="@{/ui/results(date=${date},page=1,size=50)}">50</a>
+      <a th:href="@{/ui/results(date=${date},page=1,size=100)}">100</a>
+      <a th:href="@{/ui/results(date=${date},page=1,size=500)}">500</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+        <tr>
+          <th>UTR</th>
+          <th class="amount">NPCI amt</th>
+          <th class="amount">Switch amt</th>
+          <th class="amount">CBS amt</th>
+          <th>NPCI st</th>
+          <th>Switch st</th>
+          <th>CBS st</th>
+          <th>Recon</th>
+          <th>Remarks</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="row : ${rows}">
+          <td class="utr" th:text="${row.utr}">UTR</td>
+          <td class="amount" th:text="${row.npciAmount != null ? #numbers.formatDecimal(row.npciAmount, 1, 2) : '—'}">—</td>
+          <td class="amount" th:text="${row.switchAmount != null ? #numbers.formatDecimal(row.switchAmount, 1, 2) : '—'}">—</td>
+          <td class="amount" th:text="${row.cbsAmount != null ? #numbers.formatDecimal(row.cbsAmount, 1, 2) : '—'}">—</td>
+          <td th:text="${row.npciStatus != null ? row.npciStatus : '—'}">—</td>
+          <td th:text="${row.switchStatus != null ? row.switchStatus : '—'}">—</td>
+          <td th:text="${row.cbsStatus != null ? row.cbsStatus : '—'}">—</td>
+          <td>
+            <span th:class="${'status status-' + #strings.toLowerCase(row.reconStatus)}"
+                  th:text="${row.reconStatus}">STATUS</span>
+          </td>
+          <td class="remarks" th:text="${row.remarks != null ? row.remarks : ''}"></td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    <a th:href="@{/ui}">← Back to run</a>
+    · Change date in the URL: <code>/ui/results?date=yyyyMMdd&amp;page=1&amp;size=100</code>
+  </footer>
+</main>
+</body>
+</html>

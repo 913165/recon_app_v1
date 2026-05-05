@@ -9,9 +9,13 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 import com.bank.recon.model.dto.ReconSummary;
+import com.bank.recon.model.dto.SettlementResult;
 import com.bank.recon.service.ReconService;
+import com.bank.recon.service.SettlementReconService;
 
 @RestController
 @RequestMapping("/api/recon")
@@ -19,9 +23,11 @@ public class ReconController {
 
     private static final DateTimeFormatter API_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd");
     private final ReconService reconService;
+    private final SettlementReconService settlementReconService;
 
-    public ReconController(ReconService reconService) {
+    public ReconController(ReconService reconService, SettlementReconService settlementReconService) {
         this.reconService = reconService;
+        this.settlementReconService = settlementReconService;
     }
 
     @PostMapping("/run")
@@ -32,5 +38,14 @@ public class ReconController {
     @GetMapping("/results")
     public ReconSummary getResults(@RequestParam("date") String date) {
         return reconService.getResults(LocalDate.parse(date, API_DATE_FORMAT));
+    }
+
+    @GetMapping("/settlement")
+    public SettlementResult getSettlement(@RequestParam("date") String date) {
+        try {
+            return settlementReconService.getSettlement(LocalDate.parse(date, API_DATE_FORMAT));
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, ex.getMessage());
+        }
     }
 }
