@@ -2,19 +2,47 @@
   const form = document.getElementById('recon-form');
   const overlay = document.getElementById('recon-progress-overlay');
   const submitBtn = document.getElementById('recon-submit');
+  const elapsedLabel = document.getElementById('recon-progress-seconds');
+  let elapsedSeconds = 0;
+  let elapsedTimerId = null;
   if (!form || !overlay) {
     return;
+  }
+
+  function setElapsedLabel() {
+    if (elapsedLabel) {
+      elapsedLabel.textContent = 'Elapsed: ' + elapsedSeconds + 's';
+    }
+  }
+
+  function stopElapsedTimer() {
+    if (elapsedTimerId != null) {
+      window.clearInterval(elapsedTimerId);
+      elapsedTimerId = null;
+    }
+  }
+
+  function startElapsedTimer() {
+    stopElapsedTimer();
+    elapsedSeconds = 0;
+    setElapsedLabel();
+    elapsedTimerId = window.setInterval(function () {
+      elapsedSeconds += 1;
+      setElapsedLabel();
+    }, 1000);
   }
 
   function showOverlay() {
     overlay.hidden = false;
     overlay.setAttribute('aria-hidden', 'false');
+    startElapsedTimer();
     if (submitBtn) {
       submitBtn.disabled = true;
     }
   }
 
   function hideOverlay() {
+    stopElapsedTimer();
     overlay.hidden = true;
     overlay.setAttribute('aria-hidden', 'true');
     if (submitBtn) {

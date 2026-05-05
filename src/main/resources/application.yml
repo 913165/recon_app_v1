@@ -12,11 +12,11 @@
     hibernate:
       ddl-auto: validate
     # Off in prod: logging every SQL adds latency (I/O) on bulk inserts. Use true only when debugging.
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
         jdbc:
-          batch_size: 100
+          batch_size: 1000
         order_inserts: true
         order_updates: true
   sql:

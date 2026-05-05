@@ -24,7 +24,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public final class SampleDataGenerator {
 
     /** Used when no {@code -n} / positional count and no {@code RECON_GEN_COUNT} env. */
-    private static final int DEFAULT_ROW_COUNT = 1000;
+    private static final int DEFAULT_ROW_COUNT = 1_00_000;
 
     private static final String[] PAYER_VPAS = {
         "priya.reddy@ybl", "amit.kumar@oksbi", "sneha.menon@axl", "rohit.sharma@ybl",
@@ -43,6 +43,11 @@ public final class SampleDataGenerator {
         }
         if (opt.n < 1) {
             System.err.println("n must be >= 1");
+            System.exit(1);
+            return;
+        }
+        if (opt.mismatchPercent < 0 || opt.mismatchPercent > 100) {
+            System.err.println("--mismatch-percent must be between 0 and 100");
             System.exit(1);
             return;
         }
@@ -72,6 +77,12 @@ public final class SampleDataGenerator {
         StringBuilder cbs = new StringBuilder();
         BigDecimal totalDebit = BigDecimal.ZERO;
         BigDecimal totalCredit = BigDecimal.ZERO;
+        int mismatchRows = 0;
+        if (opt.mismatchPercent > 0) {
+            mismatchRows = (int) Math.round((opt.n * opt.mismatchPercent) / 100.0d);
+            mismatchRows = Math.max(1, mismatchRows);
+            mismatchRows = Math.min(opt.n, mismatchRows);
+        }
         npci.append("UTR|RRN|TXN_DATE|TXN_TIME|AMOUNT|PAYER_VPA|PAYEE_VPA|STATUS\n");
         sw.append("UTR|RRN|TXN_DATE|TXN_TIME|AMOUNT|STATUS|RESPONSE_CODE|SWITCH_REF\n");
         cbs.append("UTR|ACCOUNT_NO|TXN_DATE|TXN_TIME|AMOUNT|DR_CR|DESCRIPTION|CBS_REF|STATUS\n");
@@ -117,6 +128,16 @@ public final class SampleDataGenerator {
             BigDecimal swAmount = amount;
             String swStatus = "SUCCESS";
             String response = "00";
+            boolean mismatchRow = mismatchRows > 0 && i > (opt.n - mismatchRows);
+            if (mismatchRow) {
+                // Alternate mismatch style for demo readability.
+                if ((i & 1) == 0) {
+                    swAmount = amount.add(new BigDecimal("0.01"));
+                } else {
+                    swStatus = "FAILED";
+                    response = "51";
+                }
+            }
             if (opt.demoAnomalies && i == opt.n - 1) {
                 swAmount = amount.add(new BigDecimal("0.01"));
             }
@@ -172,6 +193,7 @@ public final class SampleDataGenerator {
                 case "--cbs-dir" -> a.cbsDir = Path.of(require(++i, raw, "cbs-dir"));
                 case "--settlement-mismatch" -> a.settlementMismatch = true;
                 case "--seed" -> a.seed = Long.parseLong(require(++i, raw, "seed"));
+                case "--mismatch-percent" -> a.mismatchPercent = Double.parseDouble(require(++i, raw, "mismatch-percent"));
                 case "--demo-anomalies" -> a.demoAnomalies = true;
                 default -> {
                     if (s.startsWith("-")) {
@@ -296,6 +318,8 @@ public final class SampleDataGenerator {
               --cbs-dir <path>
               --settlement-mismatch  Add +50.00 to settlement NET_AMOUNT to force mismatch
               --seed <long>
+              --mismatch-percent <0..100>
+                                 Creates approx this %% of switch-side mismatches (default 1.0%%).
               --demo-anomalies    Row (n-2) only in NPCI; (n-1) amount +0.01 on switch;
                                   row n FAILED on switch. Requires n >= 3.
               -h, --help
@@ -319,6 +343,7 @@ public final class SampleDataGenerator {
         Path switchFile;
         Path cbsFile;
         Long seed;
+        double mismatchPercent = 1.0d;
         boolean showHelp;
         boolean demoAnomalies;
         boolean settlementMismatch;
