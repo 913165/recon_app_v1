@@ -223,11 +223,17 @@ public class ReconService {
     }
 
     @Transactional(readOnly = true)
-    public Page<ReconResultRecord> getResultsPage(LocalDate date, int page, int size) {
+    public Page<ReconResultRecord> getResultsPage(LocalDate date, int page, int size, @Nullable String filter) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 1000);
         Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.ASC, "utr"));
-        return reconResultRepository.findByReconDate(date, pageable).map(this::toRecord);
+        String normalized = filter == null ? "ALL" : filter.trim().toUpperCase();
+        Page<ReconResult> pageResult = switch (normalized) {
+            case "MATCHED" -> reconResultRepository.findByReconDateAndReconStatus(date, "MATCHED", pageable);
+            case "MISMATCHED" -> reconResultRepository.findByReconDateAndReconStatusNot(date, "MATCHED", pageable);
+            default -> reconResultRepository.findByReconDate(date, pageable);
+        };
+        return pageResult.map(this::toRecord);
     }
 
     private ReconStatus resolveStatus(@Nullable NpciRecord npci, @Nullable SwitchRecord sw, @Nullable CbsRecord cbs) {

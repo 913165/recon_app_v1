@@ -14,6 +14,8 @@ public interface ReconResultRepository extends JpaRepository<ReconResult, UUID> 
     boolean existsByReconDate(LocalDate reconDate);
     List<ReconResult> findAllByReconDateOrderByUtrAsc(LocalDate reconDate);
     Page<ReconResult> findByReconDate(LocalDate reconDate, Pageable pageable);
+    Page<ReconResult> findByReconDateAndReconStatus(LocalDate reconDate, String reconStatus, Pageable pageable);
+    Page<ReconResult> findByReconDateAndReconStatusNot(LocalDate reconDate, String reconStatus, Pageable pageable);
     long countByReconDate(LocalDate reconDate);
     long countByReconDateAndReconStatus(LocalDate reconDate, String reconStatus);
 }

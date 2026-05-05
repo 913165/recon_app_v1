@@ -89,17 +89,29 @@
       (<span th:text="${totalElements}">0</span> total,
       page <span th:text="${currentPage}">1</span>/<span th:text="${totalPages}">1</span>)
     </h2>
+    <form method="get" th:action="@{/ui/results}" style="margin-bottom: 0.75rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+      <input type="hidden" name="date" th:value="${date}"/>
+      <input type="hidden" name="page" value="1"/>
+      <input type="hidden" name="size" th:value="${pageSize}"/>
+      <label for="filter" style="color: var(--muted);">Filter:</label>
+      <select id="filter" name="filter">
+        <option value="ALL" th:selected="${currentFilter == 'ALL'}">All</option>
+        <option value="MATCHED" th:selected="${currentFilter == 'MATCHED'}">Matched only</option>
+        <option value="MISMATCHED" th:selected="${currentFilter == 'MISMATCHED'}">Mismatched only</option>
+      </select>
+      <button type="submit" class="btn secondary">Apply</button>
+    </form>
     <div class="pager">
       <a class="btn secondary" th:if="${hasPrev}"
-         th:href="@{/ui/results(date=${date},page=${prevPage},size=${pageSize})}">Previous</a>
+         th:href="@{/ui/results(date=${date},page=${prevPage},size=${pageSize},filter=${currentFilter})}">Previous</a>
       <a class="btn secondary" th:if="${hasNext}"
-         th:href="@{/ui/results(date=${date},page=${nextPage},size=${pageSize})}">Next</a>
+         th:href="@{/ui/results(date=${date},page=${nextPage},size=${pageSize},filter=${currentFilter})}">Next</a>
       <span style="color: var(--muted); margin-left: 0.5rem;">
         Page size:
       </span>
-      <a th:href="@{/ui/results(date=${date},page=1,size=50)}">50</a>
-      <a th:href="@{/ui/results(date=${date},page=1,size=100)}">100</a>
-      <a th:href="@{/ui/results(date=${date},page=1,size=500)}">500</a>
+      <a th:href="@{/ui/results(date=${date},page=1,size=50,filter=${currentFilter})}">50</a>
+      <a th:href="@{/ui/results(date=${date},page=1,size=100,filter=${currentFilter})}">100</a>
+      <a th:href="@{/ui/results(date=${date},page=1,size=500,filter=${currentFilter})}">500</a>
     </div>
     <div class="table-wrap">
       <table>
@@ -138,7 +150,7 @@
 
   <footer>
     <a th:href="@{/ui}">← Back to run</a>
-    · Change date in the URL: <code>/ui/results?date=yyyyMMdd&amp;page=1&amp;size=100</code>
+    · Change date in the URL: <code>/ui/results?date=yyyyMMdd&amp;page=1&amp;size=100&amp;filter=ALL</code>
   </footer>
 </main>
 </body>

@@ -70,6 +70,7 @@ public class ReconUiController {
     public String results(@RequestParam(value = "date", required = false) String dateRaw,
                           @RequestParam(value = "page", defaultValue = "1") int page,
                           @RequestParam(value = "size", defaultValue = "100") int size,
+                          @RequestParam(value = "filter", defaultValue = "ALL") String filter,
                           Model model) {
         if (dateRaw == null || dateRaw.isBlank()) {
             model.addAttribute("errorMessage", "Missing date parameter.");
@@ -87,15 +88,20 @@ public class ReconUiController {
         LocalDate parsedDate = LocalDate.parse(date, FILE_DATE);
         int safePage = Math.max(page, 1);
         int safeSize = Math.min(Math.max(size, 10), 1000);
+        String normalizedFilter = filter == null ? "ALL" : filter.trim().toUpperCase();
+        if (!normalizedFilter.equals("ALL") && !normalizedFilter.equals("MATCHED") && !normalizedFilter.equals("MISMATCHED")) {
+            normalizedFilter = "ALL";
+        }
 
         ReconSummary summary = reconService.getResultsOverview(parsedDate);
-        Page<ReconResultRecord> resultPage = reconService.getResultsPage(parsedDate, safePage - 1, safeSize);
+        Page<ReconResultRecord> resultPage = reconService.getResultsPage(parsedDate, safePage - 1, safeSize, normalizedFilter);
 
         model.addAttribute("summary", summary);
         model.addAttribute("date", date);
         model.addAttribute("rows", resultPage.getContent());
         model.addAttribute("currentPage", safePage);
         model.addAttribute("pageSize", safeSize);
+        model.addAttribute("currentFilter", normalizedFilter);
         model.addAttribute("totalPages", Math.max(resultPage.getTotalPages(), 1));
         model.addAttribute("totalElements", resultPage.getTotalElements());
         model.addAttribute("hasPrev", safePage > 1);
