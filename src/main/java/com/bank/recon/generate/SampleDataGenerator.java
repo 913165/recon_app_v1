@@ -78,10 +78,26 @@ public final class SampleDataGenerator {
         BigDecimal totalDebit = BigDecimal.ZERO;
         BigDecimal totalCredit = BigDecimal.ZERO;
         int mismatchRows = 0;
+        int amountMismatchRows = 0;
+        int statusMismatchRows = 0;
         if (opt.mismatchPercent > 0) {
             mismatchRows = (int) Math.round((opt.n * opt.mismatchPercent) / 100.0d);
             mismatchRows = Math.max(1, mismatchRows);
             mismatchRows = Math.min(opt.n, mismatchRows);
+            if (mismatchRows == 1) {
+                amountMismatchRows = 1;
+                statusMismatchRows = 0;
+            } else {
+                // Keep split uneven and realistic (not fixed 50/50).
+                double amountShare = 0.55d + (random.nextDouble() * 0.30d); // 55%..85%
+                amountMismatchRows = (int) Math.round(mismatchRows * amountShare);
+                amountMismatchRows = Math.max(1, Math.min(mismatchRows - 1, amountMismatchRows));
+                statusMismatchRows = mismatchRows - amountMismatchRows;
+                if (amountMismatchRows == statusMismatchRows) {
+                    amountMismatchRows = Math.min(mismatchRows - 1, amountMismatchRows + 1);
+                    statusMismatchRows = mismatchRows - amountMismatchRows;
+                }
+            }
         }
         npci.append("UTR|RRN|TXN_DATE|TXN_TIME|AMOUNT|PAYER_VPA|PAYEE_VPA|STATUS\n");
         sw.append("UTR|RRN|TXN_DATE|TXN_TIME|AMOUNT|STATUS|RESPONSE_CODE|SWITCH_REF\n");
@@ -130,12 +146,23 @@ public final class SampleDataGenerator {
             String response = "00";
             boolean mismatchRow = mismatchRows > 0 && i > (opt.n - mismatchRows);
             if (mismatchRow) {
-                // Alternate mismatch style for demo readability.
-                if ((i & 1) == 0) {
+                // Randomized assignment with quotas so split is uneven but controlled.
+                int remainingRows = amountMismatchRows + statusMismatchRows;
+                boolean makeAmountMismatch;
+                if (amountMismatchRows == 0) {
+                    makeAmountMismatch = false;
+                } else if (statusMismatchRows == 0) {
+                    makeAmountMismatch = true;
+                } else {
+                    makeAmountMismatch = random.nextInt(remainingRows) < amountMismatchRows;
+                }
+                if (makeAmountMismatch) {
                     swAmount = amount.add(new BigDecimal("0.01"));
+                    amountMismatchRows--;
                 } else {
                     swStatus = "FAILED";
                     response = "51";
+                    statusMismatchRows--;
                 }
             }
             if (opt.demoAnomalies && i == opt.n - 1) {
