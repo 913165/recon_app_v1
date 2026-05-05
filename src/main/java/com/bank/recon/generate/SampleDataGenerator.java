@@ -24,7 +24,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public final class SampleDataGenerator {
 
     /** Used when no {@code -n} / positional count and no {@code RECON_GEN_COUNT} env. */
-    private static final int DEFAULT_ROW_COUNT = 1_00_000;
+    private static final int DEFAULT_ROW_COUNT = 10_00_000;
 
     private static final String[] PAYER_VPAS = {
         "priya.reddy@ybl", "amit.kumar@oksbi", "sneha.menon@axl", "rohit.sharma@ybl",

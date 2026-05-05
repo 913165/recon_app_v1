@@ -27,6 +27,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import com.bank.recon.config.AppConfig;
 import com.bank.recon.exception.ReconAlreadyRunException;
+import com.bank.recon.model.StorageBackend;
 import com.bank.recon.model.dto.CbsRecord;
 import com.bank.recon.model.dto.NpciRecord;
 import com.bank.recon.model.dto.ReconResultRecord;
@@ -60,13 +61,14 @@ public class ReconService {
     private final CbsExtractRepository cbsExtractRepository;
     private final ReconResultRepository reconResultRepository;
     private final SettlementReconService settlementReconService;
+    private final RedisReconStore redisReconStore;
     private final AppConfig appConfig;
     private final TransactionTemplate transactionTemplate;
 
     public ReconService(FileParserService fileParserService, FileWriterService fileWriterService,
                         NpciTransactionRepository npciTransactionRepository, SwitchLogRepository switchLogRepository,
                         CbsExtractRepository cbsExtractRepository, ReconResultRepository reconResultRepository,
-                        SettlementReconService settlementReconService, AppConfig appConfig,
+                        SettlementReconService settlementReconService, RedisReconStore redisReconStore, AppConfig appConfig,
                         PlatformTransactionManager transactionManager) {
         this.fileParserService = fileParserService;
         this.fileWriterService = fileWriterService;
@@ -75,15 +77,25 @@ public class ReconService {
         this.cbsExtractRepository = cbsExtractRepository;
         this.reconResultRepository = reconResultRepository;
         this.settlementReconService = settlementReconService;
+        this.redisReconStore = redisReconStore;
         this.appConfig = appConfig;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     public ReconSummary runRecon(LocalDate date) throws IOException {
+        return runRecon(date, StorageBackend.POSTGRES);
+    }
+
+    public ReconSummary runRecon(LocalDate date, StorageBackend backend) throws IOException {
         long startNanos = System.nanoTime();
         try {
-            // execute() returns only after PlatformTransactionManager.commit() finishes (JDBC commit included).
-            RunOutcome outcome = transactionTemplate.execute(status -> runReconInTransaction(date));
+            RunOutcome outcome;
+            if (backend == StorageBackend.REDIS) {
+                outcome = runReconWithRedis(date);
+            } else {
+                // execute() returns only after PlatformTransactionManager.commit() finishes (JDBC commit included).
+                outcome = transactionTemplate.execute(status -> runReconInTransaction(date));
+            }
             long durationMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
             return toRunSummary(outcome.date(), outcome.npciCount(), outcome.switchCount(), outcome.cbsCount(), outcome.results(),
                 outcome.outputFile(), outcome.reconciliationMillis(), durationMillis, outcome.settlement());
@@ -161,6 +173,65 @@ public class ReconService {
         }
     }
 
+    private RunOutcome runReconWithRedis(LocalDate date) {
+        if (redisReconStore.existsByReconDate(date)) {
+            throw new ReconAlreadyRunException("Recon already run for date " + date.format(FILE_DATE_FORMAT) + " in REDIS");
+        }
+        try {
+            String fileDate = date.format(FILE_DATE_FORMAT);
+            String ext = appConfig.fileExtension();
+            Path npciFile = appConfig.input().npciDir().resolve("NPCI_TXN_" + fileDate + ext);
+            Path switchFile = appConfig.input().switchDir().resolve("SWITCH_LOG_" + fileDate + ext);
+            Path cbsFile = appConfig.input().cbsDir().resolve("CBS_EXTRACT_" + fileDate + ext);
+            Path outputFile = appConfig.output().outputDir().resolve("RECON_RESULT_" + fileDate + ext);
+
+            long reconStartNanos = System.nanoTime();
+            List<NpciRecord> npciRows = fileParserService.parseNpciFile(npciFile);
+            List<SwitchRecord> switchRows = fileParserService.parseSwitchFile(switchFile);
+            List<CbsRecord> cbsRows = fileParserService.parseCbsFile(cbsFile);
+
+            Map<String, NpciRecord> npciByUtr = new LinkedHashMap<>();
+            Map<String, SwitchRecord> switchByUtr = new LinkedHashMap<>();
+            Map<String, CbsRecord> cbsByUtr = new LinkedHashMap<>();
+            for (NpciRecord row : npciRows) npciByUtr.put(row.utr(), row);
+            for (SwitchRecord row : switchRows) switchByUtr.put(row.utr(), row);
+            for (CbsRecord row : cbsRows) cbsByUtr.put(row.utr(), row);
+
+            List<ReconResultRecord> results = new ArrayList<>();
+            TreeSet<String> utrs = new TreeSet<>();
+            utrs.addAll(npciByUtr.keySet());
+            utrs.addAll(switchByUtr.keySet());
+            utrs.addAll(cbsByUtr.keySet());
+
+            for (String utr : utrs) {
+                NpciRecord npci = npciByUtr.get(utr);
+                SwitchRecord sw = switchByUtr.get(utr);
+                CbsRecord cbs = cbsByUtr.get(utr);
+                ReconStatus status = resolveStatus(npci, sw, cbs);
+                results.add(new ReconResultRecord(
+                    utr,
+                    npci == null ? null : npci.amount(),
+                    sw == null ? null : sw.amount(),
+                    cbs == null ? null : cbs.amount(),
+                    npci == null ? null : npci.status(),
+                    sw == null ? null : sw.status(),
+                    cbs == null ? null : cbs.status(),
+                    status.code(),
+                    status.remarks()
+                ));
+            }
+
+            long reconciliationMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - reconStartNanos);
+            redisReconStore.save(date, npciRows.size(), switchRows.size(), cbsRows.size(), results);
+            fileWriterService.writeReconResult(results, outputFile);
+            BigDecimal calculatedNet = calculateMatchedNet(results);
+            SettlementResult settlement = settlementReconService.reconcileSettlement(date, calculatedNet);
+            return new RunOutcome(date, npciRows.size(), switchRows.size(), cbsRows.size(), results, outputFile, reconciliationMillis, settlement);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     private record RunOutcome(LocalDate date, int npciCount, int switchCount, int cbsCount, List<ReconResultRecord> results,
                               Path outputFile, long reconciliationMillis, SettlementResult settlement) {}
 
@@ -190,6 +261,14 @@ public class ReconService {
 
     @Transactional(readOnly = true)
     public ReconSummary getResultsOverview(LocalDate date) {
+        return getResultsOverview(date, StorageBackend.POSTGRES);
+    }
+
+    @Transactional(readOnly = true)
+    public ReconSummary getResultsOverview(LocalDate date, StorageBackend backend) {
+        if (backend == StorageBackend.REDIS) {
+            return redisReconStore.getOverview(date);
+        }
         long totalResults = reconResultRepository.countByReconDate(date);
         long matched = reconResultRepository.countByReconDateAndReconStatus(date, "MATCHED");
         long switchMissing = reconResultRepository.countByReconDateAndReconStatus(date, "SWITCH_MISSING");
@@ -223,11 +302,14 @@ public class ReconService {
     }
 
     @Transactional(readOnly = true)
-    public Page<ReconResultRecord> getResultsPage(LocalDate date, int page, int size, @Nullable String filter) {
+    public Page<ReconResultRecord> getResultsPage(LocalDate date, int page, int size, @Nullable String filter, StorageBackend backend) {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 1000);
-        Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.ASC, "utr"));
         String normalized = filter == null ? "ALL" : filter.trim().toUpperCase();
+        if (backend == StorageBackend.REDIS) {
+            return redisReconStore.getPage(date, safePage, safeSize, normalized);
+        }
+        Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.ASC, "utr"));
         Page<ReconResult> pageResult = switch (normalized) {
             case "MATCHED" -> reconResultRepository.findByReconDateAndReconStatus(date, "MATCHED", pageable);
             case "MISMATCHED" -> reconResultRepository.findByReconDateAndReconStatusNot(date, "MATCHED", pageable);

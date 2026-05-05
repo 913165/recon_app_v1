@@ -11,8 +11,8 @@
   <h1>Reconciliation results</h1>
   <nav>
     <a th:href="@{/ui}">Run</a>
-    <a th:href="@{/ui/results(date=${date})}">Refresh</a>
-    <a th:href="@{/api/recon/results(date=${date})}" target="_blank" rel="noopener">REST (JSON)</a>
+    <a th:href="@{/ui/results(date=${date},db=${currentDb})}">Refresh</a>
+    <a th:href="@{/api/recon/results(date=${date},db=${currentDb})}" target="_blank" rel="noopener">REST (JSON)</a>
   </nav>
 </header>
 <main>
@@ -23,6 +23,9 @@
 
   <div class="card">
     <h2 th:text="'Date ' + ${#temporals.format(summary.date, 'yyyy-MM-dd')} + ' (' + ${date} + ')'">Date</h2>
+    <p style="font-size: 0.85rem; color: var(--muted); margin: 0 0 1rem;">
+      Storage backend: <code th:text="${currentDb}">POSTGRES</code>
+    </p>
     <p th:if="${summary.outputFile != null}" style="font-size: 0.85rem; color: var(--muted); margin: 0 0 1rem;">
       Output file: <code th:text="${summary.outputFile}">path</code>
     </p>
@@ -91,6 +94,7 @@
     </h2>
     <form method="get" th:action="@{/ui/results}" style="margin-bottom: 0.75rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
       <input type="hidden" name="date" th:value="${date}"/>
+      <input type="hidden" name="db" th:value="${currentDb}"/>
       <input type="hidden" name="page" value="1"/>
       <input type="hidden" name="size" th:value="${pageSize}"/>
       <label for="filter" style="color: var(--muted);">Filter:</label>
@@ -103,15 +107,15 @@
     </form>
     <div class="pager">
       <a class="btn secondary" th:if="${hasPrev}"
-         th:href="@{/ui/results(date=${date},page=${prevPage},size=${pageSize},filter=${currentFilter})}">Previous</a>
+         th:href="@{/ui/results(date=${date},page=${prevPage},size=${pageSize},filter=${currentFilter},db=${currentDb})}">Previous</a>
       <a class="btn secondary" th:if="${hasNext}"
-         th:href="@{/ui/results(date=${date},page=${nextPage},size=${pageSize},filter=${currentFilter})}">Next</a>
+         th:href="@{/ui/results(date=${date},page=${nextPage},size=${pageSize},filter=${currentFilter},db=${currentDb})}">Next</a>
       <span style="color: var(--muted); margin-left: 0.5rem;">
         Page size:
       </span>
-      <a th:href="@{/ui/results(date=${date},page=1,size=50,filter=${currentFilter})}">50</a>
-      <a th:href="@{/ui/results(date=${date},page=1,size=100,filter=${currentFilter})}">100</a>
-      <a th:href="@{/ui/results(date=${date},page=1,size=500,filter=${currentFilter})}">500</a>
+      <a th:href="@{/ui/results(date=${date},page=1,size=50,filter=${currentFilter},db=${currentDb})}">50</a>
+      <a th:href="@{/ui/results(date=${date},page=1,size=100,filter=${currentFilter},db=${currentDb})}">100</a>
+      <a th:href="@{/ui/results(date=${date},page=1,size=500,filter=${currentFilter},db=${currentDb})}">500</a>
     </div>
     <div class="table-wrap">
       <table>
@@ -150,7 +154,7 @@
 
   <footer>
     <a th:href="@{/ui}">← Back to run</a>
-    · Change date in the URL: <code>/ui/results?date=yyyyMMdd&amp;page=1&amp;size=100&amp;filter=ALL</code>
+    · Change date in the URL: <code>/ui/results?date=yyyyMMdd&amp;page=1&amp;size=100&amp;filter=ALL&amp;db=POSTGRES</code>
   </footer>
 </main>
 </body>

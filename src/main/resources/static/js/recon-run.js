@@ -53,7 +53,9 @@
   form.addEventListener('submit', async function (e) {
     e.preventDefault();
     const dateInput = form.querySelector('input[name="date"]');
+    const dbInput = form.querySelector('select[name="db"]');
     const date = dateInput ? dateInput.value.trim() : '';
+    const db = dbInput ? dbInput.value.trim().toUpperCase() : 'POSTGRES';
     if (!/^\d{8}$/.test(date)) {
       return;
     }
@@ -61,7 +63,7 @@
     showOverlay();
 
     try {
-      const res = await fetch('/api/recon/run?date=' + encodeURIComponent(date), {
+      const res = await fetch('/api/recon/run?date=' + encodeURIComponent(date) + '&db=' + encodeURIComponent(db), {
         method: 'POST',
         credentials: 'same-origin',
         headers: { Accept: 'application/json' },
@@ -75,7 +77,7 @@
       }
 
       if (res.ok) {
-        let href = '/ui/results?date=' + encodeURIComponent(date) + '&completed=1';
+        let href = '/ui/results?date=' + encodeURIComponent(date) + '&completed=1&db=' + encodeURIComponent(db);
         if (body.reconciliationMillis != null) {
           href += '&reconMs=' + encodeURIComponent(String(body.reconciliationMillis));
         }
@@ -92,7 +94,7 @@
 
       if (res.status === 409) {
         window.alert(msg);
-        window.location.href = '/ui/results?date=' + encodeURIComponent(date);
+        window.location.href = '/ui/results?date=' + encodeURIComponent(date) + '&db=' + encodeURIComponent(db);
         return;
       }
 

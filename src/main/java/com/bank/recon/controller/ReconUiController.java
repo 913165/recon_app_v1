@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import com.bank.recon.exception.ReconAlreadyRunException;
+import com.bank.recon.model.StorageBackend;
 import com.bank.recon.model.dto.ReconResultRecord;
 import com.bank.recon.model.dto.ReconSummary;
 import com.bank.recon.service.ReconService;
@@ -38,8 +39,11 @@ public class ReconUiController {
     }
 
     @PostMapping("/run")
-    public String run(@RequestParam("date") String dateRaw, RedirectAttributes redirectAttributes) {
+    public String run(@RequestParam("date") String dateRaw,
+                      @RequestParam(value = "db", defaultValue = "POSTGRES") String dbRaw,
+                      RedirectAttributes redirectAttributes) {
         String date = dateRaw == null ? "" : dateRaw.trim();
+        StorageBackend backend = StorageBackend.parse(dbRaw);
         LocalDate parsed;
         try {
             parsed = LocalDate.parse(date, FILE_DATE);
@@ -48,7 +52,7 @@ public class ReconUiController {
             return "redirect:/ui";
         }
         try {
-            ReconSummary outcome = reconService.runRecon(parsed);
+            ReconSummary outcome = reconService.runRecon(parsed, backend);
             redirectAttributes.addFlashAttribute("successMessage", "Reconciliation completed for " + date + ".");
             if (outcome.reconciliationMillis() != null) {
                 redirectAttributes.addFlashAttribute("runReconMillis", outcome.reconciliationMillis());
@@ -63,7 +67,7 @@ public class ReconUiController {
                 e.getMessage() != null ? e.getMessage() : "I/O error while running reconciliation.");
             return "redirect:/ui?date=" + date;
         }
-        return "redirect:/ui/results?date=" + date;
+        return "redirect:/ui/results?date=" + date + "&db=" + backend.name();
     }
 
     @GetMapping("/results")
@@ -71,6 +75,7 @@ public class ReconUiController {
                           @RequestParam(value = "page", defaultValue = "1") int page,
                           @RequestParam(value = "size", defaultValue = "100") int size,
                           @RequestParam(value = "filter", defaultValue = "ALL") String filter,
+                          @RequestParam(value = "db", defaultValue = "POSTGRES") String dbRaw,
                           Model model) {
         if (dateRaw == null || dateRaw.isBlank()) {
             model.addAttribute("errorMessage", "Missing date parameter.");
@@ -88,13 +93,14 @@ public class ReconUiController {
         LocalDate parsedDate = LocalDate.parse(date, FILE_DATE);
         int safePage = Math.max(page, 1);
         int safeSize = Math.min(Math.max(size, 10), 1000);
+        StorageBackend backend = StorageBackend.parse(dbRaw);
         String normalizedFilter = filter == null ? "ALL" : filter.trim().toUpperCase();
         if (!normalizedFilter.equals("ALL") && !normalizedFilter.equals("MATCHED") && !normalizedFilter.equals("MISMATCHED")) {
             normalizedFilter = "ALL";
         }
 
-        ReconSummary summary = reconService.getResultsOverview(parsedDate);
-        Page<ReconResultRecord> resultPage = reconService.getResultsPage(parsedDate, safePage - 1, safeSize, normalizedFilter);
+        ReconSummary summary = reconService.getResultsOverview(parsedDate, backend);
+        Page<ReconResultRecord> resultPage = reconService.getResultsPage(parsedDate, safePage - 1, safeSize, normalizedFilter, backend);
 
         model.addAttribute("summary", summary);
         model.addAttribute("date", date);
@@ -102,6 +108,7 @@ public class ReconUiController {
         model.addAttribute("currentPage", safePage);
         model.addAttribute("pageSize", safeSize);
         model.addAttribute("currentFilter", normalizedFilter);
+        model.addAttribute("currentDb", backend.name());
         model.addAttribute("totalPages", Math.max(resultPage.getTotalPages(), 1));
         model.addAttribute("totalElements", resultPage.getTotalElements());
         model.addAttribute("hasPrev", safePage > 1);

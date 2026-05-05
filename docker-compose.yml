@@ -11,6 +11,10 @@
       - pgdata:/var/lib/postgresql/data
       - ./data/input:/data/input
       - ./data/output:/data/output
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
 
 volumes:
   pgdata:

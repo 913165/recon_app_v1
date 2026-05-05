@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 
+import com.bank.recon.model.StorageBackend;
 import com.bank.recon.model.dto.ReconSummary;
 import com.bank.recon.model.dto.SettlementResult;
 import com.bank.recon.service.ReconService;
@@ -31,12 +32,18 @@ public class ReconController {
     }
 
     @PostMapping("/run")
-    public ReconSummary runRecon(@RequestParam("date") String date) throws IOException {
-        return reconService.runRecon(LocalDate.parse(date, API_DATE_FORMAT));
+    public ReconSummary runRecon(@RequestParam("date") String date,
+                                 @RequestParam(value = "db", defaultValue = "POSTGRES") String db) throws IOException {
+        return reconService.runRecon(LocalDate.parse(date, API_DATE_FORMAT), StorageBackend.parse(db));
     }
 
     @GetMapping("/results")
-    public ReconSummary getResults(@RequestParam("date") String date) {
+    public ReconSummary getResults(@RequestParam("date") String date,
+                                   @RequestParam(value = "db", defaultValue = "POSTGRES") String db) {
+        StorageBackend backend = StorageBackend.parse(db);
+        if (backend == StorageBackend.REDIS) {
+            return reconService.getResultsOverview(LocalDate.parse(date, API_DATE_FORMAT), backend);
+        }
         return reconService.getResults(LocalDate.parse(date, API_DATE_FORMAT));
     }
 

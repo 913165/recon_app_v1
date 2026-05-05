@@ -32,6 +32,11 @@
     <form id="recon-form" th:action="@{/ui/run}" method="post">
       <label for="date">Business date (yyyyMMdd)</label>
       <input id="date" name="date" type="text" maxlength="8" pattern="\d{8}" required th:value="${date}"/>
+      <label for="db">Storage backend</label>
+      <select id="db" name="db">
+        <option value="POSTGRES">Postgres</option>
+        <option value="REDIS">Redis</option>
+      </select>
       <div>
         <button type="submit" id="recon-submit">Run recon</button>
         <a class="btn secondary" style="margin-left: 0.5rem;" th:href="@{/ui/results(date=${date})}">View results only</a>
