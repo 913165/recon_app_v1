@@ -29,11 +29,11 @@
       <code>CBS_EXTRACT_<span th:text="${date}">DATE</span></code>
       under configured input folders.
     </p>
-    <form th:action="@{/ui/run}" method="post">
+    <form id="recon-form" th:action="@{/ui/run}" method="post">
       <label for="date">Business date (yyyyMMdd)</label>
       <input id="date" name="date" type="text" maxlength="8" pattern="\d{8}" required th:value="${date}"/>
       <div>
-        <button type="submit">Run recon</button>
+        <button type="submit" id="recon-submit">Run recon</button>
         <a class="btn secondary" style="margin-left: 0.5rem;" th:href="@{/ui/results(date=${date})}">View results only</a>
       </div>
     </form>
@@ -43,5 +43,16 @@
     JSON API: <code>POST /api/recon/run?date=yyyyMMdd</code> · <code>GET /api/recon/results?date=yyyyMMdd</code>
   </footer>
 </main>
+
+<div id="recon-progress-overlay" class="recon-overlay" hidden aria-hidden="true" role="alertdialog" aria-live="polite" aria-busy="true" aria-label="Reconciliation in progress">
+  <div class="recon-overlay-inner">
+    <p class="recon-overlay-title">Running reconciliation…</p>
+    <p class="recon-overlay-hint">This can take a while for large files. Please wait.</p>
+    <div class="recon-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Indeterminate progress">
+      <div class="recon-progress-fill"></div>
+    </div>
+  </div>
+</div>
+<script th:src="@{/js/recon-run.js}" defer></script>
 </body>
 </html>

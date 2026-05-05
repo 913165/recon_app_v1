@@ -48,8 +48,14 @@ public class ReconUiController {
             return "redirect:/ui";
         }
         try {
-            reconService.runRecon(parsed);
+            ReconSummary outcome = reconService.runRecon(parsed);
             redirectAttributes.addFlashAttribute("successMessage", "Reconciliation completed for " + date + ".");
+            if (outcome.reconciliationMillis() != null) {
+                redirectAttributes.addFlashAttribute("runReconMillis", outcome.reconciliationMillis());
+            }
+            if (outcome.durationMillis() != null) {
+                redirectAttributes.addFlashAttribute("runTotalMillis", outcome.durationMillis());
+            }
         } catch (ReconAlreadyRunException e) {
             redirectAttributes.addFlashAttribute("infoMessage", e.getMessage());
         } catch (IOException e) {

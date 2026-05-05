@@ -17,6 +17,8 @@
 </header>
 <main>
   <div class="alert alert-success" th:if="${successMessage != null}" th:text="${successMessage}">OK</div>
+  <div class="alert alert-success" th:if="${param.completed != null and param.completed[0] == '1'}"
+       th:text="'Reconciliation completed for ' + ${date} + '.'">OK</div>
   <div class="alert alert-info" th:if="${infoMessage != null}" th:text="${infoMessage}">Info</div>
 
   <div class="card">
@@ -61,11 +63,19 @@
         <div class="value" th:text="${summary.statusMismatch}">0</div>
         <div class="label">Status mismatch</div>
       </div>
+      <div class="stat stat-timing"
+           th:if="${summary.reconciliationMillis != null or (param.reconMs != null and !#lists.isEmpty(param.reconMs)) or runReconMillis != null}">
+        <div class="value" th:text="${summary.reconciliationMillis != null ? summary.reconciliationMillis + ' ms' : (param.reconMs != null and !#lists.isEmpty(param.reconMs) ? param.reconMs[0] + ' ms' : (runReconMillis != null ? runReconMillis + ' ms' : ''))}">0 ms</div>
+        <div class="label">Reconciliation time</div>
+        <div class="hint">Parse + match in memory</div>
+      </div>
+      <div class="stat stat-timing"
+           th:if="${summary.durationMillis != null or (param.totalMs != null and !#lists.isEmpty(param.totalMs)) or runTotalMillis != null}">
+        <div class="value" th:text="${summary.durationMillis != null ? summary.durationMillis + ' ms' : (param.totalMs != null and !#lists.isEmpty(param.totalMs) ? param.totalMs[0] + ' ms' : (runTotalMillis != null ? runTotalMillis + ' ms' : ''))}">0 ms</div>
+        <div class="label">Total time</div>
+        <div class="hint">DB writes, file output, commit</div>
+      </div>
     </div>
-    <p th:if="${summary.reconciliationMillis != null}" style="margin: 1rem 0 0; font-size: 0.8rem; color: var(--muted);">
-      Reconciliation phase: <span th:text="${summary.reconciliationMillis}">0</span> ms ·
-      Total run: <span th:text="${summary.durationMillis != null ? summary.durationMillis : '—'}">—</span> ms
-    </p>
   </div>
 
   <div class="card" th:if="${rows == null || rows.isEmpty()}">
