@@ -6,11 +6,11 @@ This document provides visual diagrams for the end-to-end reconciliation process
 
 ```mermaid
 flowchart TD
-    A[User / Scheduler triggers run<br/>POST /api/recon/run?date=yyyyMMdd] --> B[ReconController]
-    B --> C[ReconService.runRecon(date)]
-    C --> D{Results already exist<br/>for date?}
-    D -- Yes --> E[Throw ReconAlreadyRunException<br/>HTTP 409]
-    D -- No --> F[Resolve file paths from AppConfig]
+    A["User or Scheduler triggers run: POST /api/recon/run with date"] --> B["ReconController"]
+    B --> C["ReconService runRecon"]
+    C --> D{"Results already exist for date?"}
+    D -- Yes --> E["Throw ReconAlreadyRunException (HTTP 409)"]
+    D -- No --> F["Resolve file paths from AppConfig"]
     F --> G[Read NPCI input file]
     F --> H[Read Switch input file]
     G --> I[FileParserService.parseNpciFile]
@@ -19,7 +19,7 @@ flowchart TD
     J --> L[Persist Switch staging rows]
     K --> M[Build UTR maps + union keys]
     L --> M
-    M --> N[Resolve status per UTR<br/>MATCHED / MISMATCH / MISSING]
+    M --> N["Resolve status per UTR: MATCHED / MISMATCH / MISSING"]
     N --> O[Persist recon_result rows]
     O --> P[Write RECON_RESULT output file]
     P --> Q[Return ReconSummary response]
@@ -29,7 +29,7 @@ flowchart TD
 
 ```mermaid
 sequenceDiagram
-    actor U as User/UI
+    actor U as User
     participant RC as ReconController
     participant RS as ReconService
     participant FP as FileParserService
@@ -37,7 +37,7 @@ sequenceDiagram
     participant FW as FileWriterService
     participant FS as File System
 
-    U->>RC: POST /api/recon/run?date=yyyyMMdd
+    U->>RC: POST /api/recon/run with date
     RC->>RS: runRecon(date)
     RS->>DB: existsByReconDate(date)
     alt Already run
@@ -47,10 +47,10 @@ sequenceDiagram
         RS->>FS: Resolve input/output paths (AppConfig)
         RS->>FP: parseNpciFile(npciFile)
         FP->>FS: Read NPCI lines
-        FP-->>RS: List<NpciRecord>
+        FP-->>RS: List of NpciRecord
         RS->>FP: parseSwitchFile(switchFile)
         FP->>FS: Read Switch lines
-        FP-->>RS: List<SwitchRecord>
+        FP-->>RS: List of SwitchRecord
         RS->>DB: saveAll NPCI + Switch staging entities
         RS->>RS: Compare by UTR and resolve statuses
         RS->>DB: saveAll recon_result rows
@@ -60,7 +60,7 @@ sequenceDiagram
         RC-->>U: 200 OK + summary JSON
     end
 
-    U->>RC: GET /api/recon/results?date=yyyyMMdd
+    U->>RC: GET /api/recon/results with date
     RC->>RS: getResults(date)
     RS->>DB: findByReconDate(date)
     RS-->>RC: ReconSummary (from DB results)
